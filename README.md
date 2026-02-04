@@ -32,7 +32,7 @@ MAKORA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, An
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/ygwyg/MAKORA.git
+git clone https://github.com/marianopa-tr/MAKORA.git
 cd makora
 npm install
 ```
