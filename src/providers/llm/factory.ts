@@ -1,10 +1,11 @@
 import type { Env } from "../../env.d";
 import type { LLMProvider } from "../types";
 import { createAISDKProvider, SUPPORTED_PROVIDERS, type SupportedProvider } from "./ai-sdk";
+import { createAzureOpenAIProvider } from "./azure-openai";
 import { createCloudflareGatewayProvider } from "./cloudflare-gateway";
 import { createOpenAIProvider } from "./openai";
 
-export type LLMProviderType = "openai-raw" | "ai-sdk" | "cloudflare-gateway";
+export type LLMProviderType = "openai-raw" | "ai-sdk" | "cloudflare-gateway" | "azure-openai";
 
 /**
  * Factory function to create LLM provider based on environment configuration.
@@ -13,6 +14,7 @@ export type LLMProviderType = "openai-raw" | "ai-sdk" | "cloudflare-gateway";
  * - "openai-raw": Direct OpenAI API calls (default, backward compatible)
  * - "ai-sdk": Vercel AI SDK with 5 providers (OpenAI, Anthropic, Google, xAI, DeepSeek)
  * - "cloudflare-gateway": Cloudflare AI Gateway (/compat) for unified access
+ * - "azure-openai": Azure OpenAI (resource endpoint + deployment)
  *
  * @param env - Environment variables
  * @returns LLMProvider instance or null if no valid configuration
@@ -24,6 +26,28 @@ export function createLLMProvider(env: Env): LLMProvider | null {
   const openaiBaseUrl = openaiBaseUrlRaw ? openaiBaseUrlRaw : undefined;
 
   switch (providerType) {
+    case "azure-openai": {
+      const azureApiKey = env.AZURE_API_KEY;
+      const azureEndpoint =
+        env.AZURE_ENDPOINT ??
+        (env.AZURE_RESOURCE_NAME ? `https://${env.AZURE_RESOURCE_NAME}.openai.azure.com` : undefined);
+      const azureDeploymentRaw = env.AZURE_DEPLOYMENT ?? model;
+      const azureDeployment = azureDeploymentRaw.includes("/")
+        ? azureDeploymentRaw.split("/").pop() ?? azureDeploymentRaw
+        : azureDeploymentRaw;
+
+      if (!azureApiKey || !azureEndpoint) {
+        console.warn("LLM_PROVIDER=azure-openai requires AZURE_API_KEY and AZURE_ENDPOINT or AZURE_RESOURCE_NAME");
+        return null;
+      }
+
+      return createAzureOpenAIProvider({
+        apiKey: azureApiKey,
+        endpoint: azureEndpoint,
+        deployment: azureDeployment,
+        apiVersion: env.AZURE_API_VERSION,
+      });
+    }
     case "cloudflare-gateway": {
       if (!env.CLOUDFLARE_AI_GATEWAY_ACCOUNT_ID || !env.CLOUDFLARE_AI_GATEWAY_ID || !env.CLOUDFLARE_AI_GATEWAY_TOKEN) {
         console.warn(
@@ -87,6 +111,11 @@ export function isLLMConfigured(env: Env): boolean {
   const providerType = (env.LLM_PROVIDER as LLMProviderType) ?? "openai-raw";
 
   switch (providerType) {
+    case "azure-openai":
+      return !!(
+        env.AZURE_API_KEY &&
+        (env.AZURE_ENDPOINT || env.AZURE_RESOURCE_NAME)
+      );
     case "cloudflare-gateway":
       return !!(
         env.CLOUDFLARE_AI_GATEWAY_ACCOUNT_ID &&

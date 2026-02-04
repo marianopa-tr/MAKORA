@@ -147,6 +147,75 @@ describe("LLM Provider Factory", () => {
       });
     });
 
+    describe("azure-openai provider", () => {
+      it("creates Azure OpenAI provider with endpoint", async () => {
+        const fetchMock = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            id: "test",
+            choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+          }),
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const { createLLMProvider } = await import("./factory");
+        const env = {
+          AZURE_API_KEY: "azure-test",
+          AZURE_ENDPOINT: "https://example.openai.azure.com",
+          LLM_PROVIDER: "azure-openai",
+          LLM_MODEL: "chat-deploy",
+        } as unknown as Env;
+
+        const provider = createLLMProvider(env);
+        expect(provider).not.toBeNull();
+
+        await provider!.complete({ messages: [{ role: "user", content: "hi" }] });
+        expect(fetchMock).toHaveBeenCalledWith(
+          expect.stringContaining("https://example.openai.azure.com/openai/deployments/chat-deploy/chat/completions"),
+          expect.any(Object)
+        );
+      });
+
+      it("uses AZURE_RESOURCE_NAME when endpoint is missing", async () => {
+        const fetchMock = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            id: "test",
+            choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+          }),
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const { createLLMProvider } = await import("./factory");
+        const env = {
+          AZURE_API_KEY: "azure-test",
+          AZURE_RESOURCE_NAME: "resource-name",
+          LLM_PROVIDER: "azure-openai",
+        } as unknown as Env;
+
+        const provider = createLLMProvider(env);
+        expect(provider).not.toBeNull();
+
+        await provider!.complete({ messages: [{ role: "user", content: "hi" }] });
+        expect(fetchMock).toHaveBeenCalledWith(
+          expect.stringContaining("https://resource-name.openai.azure.com/openai/deployments"),
+          expect.any(Object)
+        );
+      });
+
+      it("returns null when missing key or endpoint", async () => {
+        const { createLLMProvider } = await import("./factory");
+        const env = {
+          LLM_PROVIDER: "azure-openai",
+        } as unknown as Env;
+
+        const provider = createLLMProvider(env);
+        expect(provider).toBeNull();
+      });
+    });
+
     describe("ai-sdk provider", () => {
       it("creates AI SDK provider with OpenAI key", async () => {
         const createOpenAIMock = vi.fn(

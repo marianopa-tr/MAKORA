@@ -32,7 +32,7 @@ CREATE INDEX idx_order_approvals_expires ON order_approvals(expires_at);
 CREATE TABLE trades (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   approval_id TEXT REFERENCES order_approvals(id),
-  alpaca_order_id TEXT NOT NULL,
+  broker_order_id TEXT NOT NULL,
   symbol TEXT NOT NULL,
   side TEXT NOT NULL,
   qty REAL NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE trades (
 
 CREATE INDEX idx_trades_symbol ON trades(symbol);
 CREATE INDEX idx_trades_created_at ON trades(created_at);
-CREATE INDEX idx_trades_alpaca_order_id ON trades(alpaca_order_id);
+CREATE INDEX idx_trades_broker_order_id ON trades(broker_order_id);
 
 CREATE TABLE risk_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),

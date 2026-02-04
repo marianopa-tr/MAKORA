@@ -3,7 +3,7 @@ import type { D1Client, TradeRow } from "../client";
 
 export interface CreateTradeParams {
   approval_id?: string;
-  alpaca_order_id: string;
+  broker_order_id: string;
   symbol: string;
   side: string;
   qty?: number;
@@ -19,12 +19,12 @@ export async function createTrade(db: D1Client, params: CreateTradeParams): Prom
   const now = nowISO();
 
   await db.run(
-    `INSERT INTO trades (id, approval_id, alpaca_order_id, symbol, side, qty, order_type, limit_price, stop_price, status, created_at, updated_at)
+    `INSERT INTO trades (id, approval_id, broker_order_id, symbol, side, qty, order_type, limit_price, stop_price, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       params.approval_id ?? null,
-      params.alpaca_order_id,
+      params.broker_order_id,
       params.symbol,
       params.side,
       params.qty ?? params.notional ?? 0,
@@ -53,8 +53,8 @@ export async function updateTradeStatus(
   );
 }
 
-export async function getTradeByAlpacaOrderId(db: D1Client, alpacaOrderId: string): Promise<TradeRow | null> {
-  return db.executeOne<TradeRow>(`SELECT * FROM trades WHERE alpaca_order_id = ?`, [alpacaOrderId]);
+export async function getTradeByBrokerOrderId(db: D1Client, brokerOrderId: string): Promise<TradeRow | null> {
+  return db.executeOne<TradeRow>(`SELECT * FROM trades WHERE broker_order_id = ?`, [brokerOrderId]);
 }
 
 export async function getTradeById(db: D1Client, tradeId: string): Promise<TradeRow | null> {

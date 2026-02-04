@@ -1,11 +1,11 @@
-import { getHarnessStub } from "./durable-objects/mahoraga-harness";
+import { getHarnessStub } from "./durable-objects/makora-harness";
 import type { Env } from "./env.d";
 import { handleCronEvent } from "./jobs/cron";
-import { MahoragaMcpAgent } from "./mcp/agent";
+import { MakoraMcpAgent } from "./mcp/agent";
 
 export { SessionDO } from "./durable-objects/session";
-export { MahoragaMcpAgent };
-export { MahoragaHarness } from "./durable-objects/mahoraga-harness";
+export { MakoraMcpAgent };
+export { MakoraHarness } from "./durable-objects/makora-harness";
 
 function constantTimeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -17,7 +17,7 @@ function constantTimeCompare(a: string, b: string): boolean {
 }
 
 function isAuthorized(request: Request, env: Env): boolean {
-  const token = env.MAHORAGA_API_TOKEN;
+  const token = env.MAKORA_API_TOKEN;
   if (!token) return false;
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
@@ -25,7 +25,7 @@ function isAuthorized(request: Request, env: Env): boolean {
 }
 
 function unauthorizedResponse(): Response {
-  return new Response(JSON.stringify({ error: "Unauthorized. Requires: Authorization: Bearer <MAHORAGA_API_TOKEN>" }), {
+  return new Response(JSON.stringify({ error: "Unauthorized. Requires: Authorization: Bearer <MAKORA_API_TOKEN>" }), {
     status: 401,
     headers: { "Content-Type": "application/json" },
   });
@@ -51,7 +51,7 @@ export default {
     if (url.pathname === "/") {
       return new Response(
         JSON.stringify({
-          name: "mahoraga",
+          name: "makora",
           version: "0.3.0",
           description: "Autonomous LLM-powered trading agent on Cloudflare Workers",
           endpoints: {
@@ -70,7 +70,7 @@ export default {
       if (!isAuthorized(request, env)) {
         return unauthorizedResponse();
       }
-      return MahoragaMcpAgent.mount("/mcp", { binding: "MCP_AGENT" }).fetch(request, env, ctx);
+      return MakoraMcpAgent.mount("/mcp", { binding: "MCP_AGENT" }).fetch(request, env, ctx);
     }
 
     if (url.pathname.startsWith("/agent")) {

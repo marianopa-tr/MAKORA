@@ -3,13 +3,24 @@ export interface Env {
   CACHE: KVNamespace;
   ARTIFACTS: R2Bucket;
   SESSION: DurableObjectNamespace;
-  MAHORAGA_HARNESS?: DurableObjectNamespace;
+  MAKORA_HARNESS?: DurableObjectNamespace;
 
-  ALPACA_API_KEY: string;
-  ALPACA_API_SECRET: string;
+  ETORO_API_KEY: string;
+  ETORO_USER_KEY: string;
+  ETORO_ENV?: "demo" | "real";
+  /** @deprecated Alpaca credentials kept for backward compatibility */
+  ALPACA_API_KEY?: string;
+  /** @deprecated Alpaca credentials kept for backward compatibility */
+  ALPACA_API_SECRET?: string;
+  /** @deprecated Alpaca credentials kept for backward compatibility */
   ALPACA_PAPER?: string;
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
+  AZURE_API_KEY?: string;
+  AZURE_ENDPOINT?: string;
+  AZURE_RESOURCE_NAME?: string;
+  AZURE_DEPLOYMENT?: string;
+  AZURE_API_VERSION?: string;
   ANTHROPIC_API_KEY?: string;
   GOOGLE_GENERATIVE_AI_API_KEY?: string;
   XAI_API_KEY?: string;
@@ -17,11 +28,11 @@ export interface Env {
   CLOUDFLARE_AI_GATEWAY_ACCOUNT_ID?: string;
   CLOUDFLARE_AI_GATEWAY_ID?: string;
   CLOUDFLARE_AI_GATEWAY_TOKEN?: string;
-  LLM_PROVIDER?: "openai-raw" | "ai-sdk" | "cloudflare-gateway";
+  LLM_PROVIDER?: "openai-raw" | "ai-sdk" | "cloudflare-gateway" | "azure-openai";
   LLM_MODEL?: string;
   TWITTER_BEARER_TOKEN?: string;
   DISCORD_WEBHOOK_URL?: string;
-  MAHORAGA_API_TOKEN: string;
+  MAKORA_API_TOKEN: string;
   KILL_SWITCH_SECRET: string;
 
   ENVIRONMENT: string;

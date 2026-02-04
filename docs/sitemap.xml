@@ -1,37 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://mahoraga.dev/</loc>
+    <loc>https://makora.dev/</loc>
     <lastmod>2025-02-04</lastmod>
     <priority>1.0</priority>
     <changefreq>weekly</changefreq>
   </url>
   <url>
-    <loc>https://mahoraga.dev/getting-started.html</loc>
+    <loc>https://makora.dev/getting-started.html</loc>
     <lastmod>2025-02-04</lastmod>
     <priority>0.9</priority>
     <changefreq>monthly</changefreq>
   </url>
   <url>
-    <loc>https://mahoraga.dev/harness.html</loc>
+    <loc>https://makora.dev/harness.html</loc>
     <lastmod>2025-02-04</lastmod>
     <priority>0.8</priority>
     <changefreq>monthly</changefreq>
   </url>
   <url>
-    <loc>https://mahoraga.dev/architecture.html</loc>
+    <loc>https://makora.dev/architecture.html</loc>
     <lastmod>2025-02-04</lastmod>
     <priority>0.7</priority>
     <changefreq>monthly</changefreq>
   </url>
   <url>
-    <loc>https://mahoraga.dev/configuration.html</loc>
+    <loc>https://makora.dev/configuration.html</loc>
     <lastmod>2025-02-04</lastmod>
     <priority>0.7</priority>
     <changefreq>monthly</changefreq>
   </url>
   <url>
-    <loc>https://mahoraga.dev/extending.html</loc>
+    <loc>https://makora.dev/extending.html</loc>
     <lastmod>2025-02-04</lastmod>
     <priority>0.7</priority>
     <changefreq>monthly</changefreq>

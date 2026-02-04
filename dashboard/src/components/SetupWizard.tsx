@@ -11,15 +11,15 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  const [alpacaKey, setAlpacaKey] = useState('')
-  const [alpacaSecret, setAlpacaSecret] = useState('')
+  const [etoroApiKey, setEtoroApiKey] = useState('')
+  const [etoroUserKey, setEtoroUserKey] = useState('')
   const [openaiKey, setOpenaiKey] = useState('')
-  const [paperMode, setPaperMode] = useState(true)
+  const [etoroEnv, setEtoroEnv] = useState<'demo' | 'real'>('demo')
   const [startingEquity, setStartingEquity] = useState(100000)
 
   const handleSubmit = async () => {
-    if (!alpacaKey || !alpacaSecret) {
-      setError('Alpaca API Key and Secret are required')
+    if (!etoroApiKey || !etoroUserKey) {
+      setError('eToro API Key and User Key are required')
       return
     }
 
@@ -31,10 +31,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          alpaca_key: alpacaKey,
-          alpaca_secret: alpacaSecret,
+          etoro_api_key: etoroApiKey,
+          etoro_user_key: etoroUserKey,
+          etoro_env: etoroEnv,
           openai_key: openaiKey || undefined,
-          paper_mode: paperMode,
           starting_equity: startingEquity,
         }),
       })
@@ -55,7 +55,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   return (
     <div className="min-h-screen bg-hud-bg flex items-center justify-center p-6">
-      <Panel title="MAHORAGA SETUP" className="w-full max-w-xl">
+      <Panel title="MAKORA SETUP" className="w-full max-w-xl">
         {step === 0 && (
           <div className="space-y-6">
             <div className="text-center py-2">
@@ -118,7 +118,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         {step === 1 && (
           <div className="space-y-6">
             <div className="text-center py-4">
-              <h2 className="text-2xl font-light text-hud-text-bright mb-2">Welcome to Mahoraga</h2>
+              <h2 className="text-2xl font-light text-hud-text-bright mb-2">Welcome to Makora</h2>
               <p className="text-hud-text-dim text-sm">
                 Autonomous trading powered by social sentiment and AI analysis
               </p>
@@ -157,11 +157,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         {step === 2 && (
           <div className="space-y-6">
             <div>
-              <h3 className="hud-label mb-4 text-hud-primary">Alpaca Trading Account</h3>
+              <h3 className="hud-label mb-4 text-hud-primary">eToro Trading Account</h3>
               <p className="text-xs text-hud-text-dim mb-4">
                 Get your API keys from{' '}
-                <a href="https://app.alpaca.markets" target="_blank" rel="noopener noreferrer" className="text-hud-primary hover:underline">
-                  app.alpaca.markets
+                <a href="https://api-portal.etoro.com/" target="_blank" rel="noopener noreferrer" className="text-hud-primary hover:underline">
+                  api-portal.etoro.com
                 </a>
               </p>
               
@@ -171,32 +171,31 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                   <input
                     type="text"
                     className="hud-input w-full"
-                    placeholder="PK..."
-                    value={alpacaKey}
-                    onChange={e => setAlpacaKey(e.target.value)}
+                    placeholder="Public API key..."
+                    value={etoroApiKey}
+                    onChange={e => setEtoroApiKey(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="hud-label block mb-1">API Secret</label>
+                  <label className="hud-label block mb-1">User Key</label>
                   <input
                     type="password"
                     className="hud-input w-full"
-                    placeholder="Secret key..."
-                    value={alpacaSecret}
-                    onChange={e => setAlpacaSecret(e.target.value)}
+                    placeholder="User key..."
+                    value={etoroUserKey}
+                    onChange={e => setEtoroUserKey(e.target.value)}
                   />
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="paperMode"
-                    checked={paperMode}
-                    onChange={e => setPaperMode(e.target.checked)}
-                    className="accent-hud-primary"
-                  />
-                  <label htmlFor="paperMode" className="hud-label">
-                    Paper Trading Mode (recommended for testing)
-                  </label>
+                <div>
+                  <label className="hud-label block mb-1">Environment</label>
+                  <select
+                    className="hud-input w-full"
+                    value={etoroEnv}
+                    onChange={e => setEtoroEnv(e.target.value as 'demo' | 'real')}
+                  >
+                    <option value="demo">Demo</option>
+                    <option value="real">Real</option>
+                  </select>
                 </div>
               </div>
             </div>

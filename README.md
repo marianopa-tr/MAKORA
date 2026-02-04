@@ -1,22 +1,20 @@
 ⚠️ **Warning:** This software is provided for educational and informational purposes only. Nothing in this repository constitutes financial, investment, legal, or tax advice.
 
-# MAHORAGA
+# MAKORA
 
 An autonomous, LLM-powered trading agent that runs 24/7 on Cloudflare Workers.
 
-[![Discord](https://img.shields.io/discord/1467592472158015553?color=7289da&label=Discord&logo=discord&logoColor=white)](https://discord.gg/Ys8KpsW5NN)
+MAKORA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK) to analyze signals, and executes trades through eToro. It runs as a Cloudflare Durable Object with persistent state, automatic restarts, and 24/7 crypto trading support.
 
-MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK) to analyze signals, and executes trades through Alpaca. It runs as a Cloudflare Durable Object with persistent state, automatic restarts, and 24/7 crypto trading support.
-
-<img width="1278" height="957" alt="dashboard" src="https://github.com/user-attachments/assets/56473ab6-e2c6-45fc-9e32-cf85e69f1a2d" />
+<img width="1278" height="957" alt="dashboard" src="https://github.com/marianopa-tr/MAKORA/blob/main/docs/dashboard.png?raw=true" />
 
 ## Features
 
+- **Powered by eToro** - Works directly with your demo or real eToro portfolio
 - **24/7 Operation** — Runs on Cloudflare Workers, no local machine required
 - **Multi-Source Signals** — StockTwits, Reddit (4 subreddits), Twitter confirmation
 - **Multi-Provider LLM** — OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK or Cloudflare AI Gateway
 - **Crypto Trading** — Trade BTC, ETH, SOL around the clock
-- **Options Support** — High-conviction options plays
 - **Staleness Detection** — Auto-exit positions that lose momentum
 - **Pre-Market Analysis** — Prepare trading plans before market open
 - **Discord Notifications** — Get alerts on BUY signals
@@ -26,7 +24,7 @@ MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, 
 
 - Node.js 18+
 - Cloudflare account (free tier works)
-- Alpaca account (free, paper trading supported)
+- eToro account with API access (demo/real configurable)
 - LLM API key (OpenAI, Anthropic, Google, xAI, DeepSeek) or Cloudflare AI Gateway credentials
 
 ## Quick Start
@@ -34,8 +32,8 @@ MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, 
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/ygwyg/MAHORAGA.git
-cd mahoraga
+git clone https://github.com/ygwyg/MAKORA.git
+cd makora
 npm install
 ```
 
@@ -43,7 +41,7 @@ npm install
 
 ```bash
 # Create D1 database
-npx wrangler d1 create mahoraga-db
+npx wrangler d1 create makora-db
 # Copy the database_id to wrangler.jsonc
 
 # Create KV namespace
@@ -51,19 +49,19 @@ npx wrangler kv namespace create CACHE
 # Copy the id to wrangler.jsonc
 
 # Run migrations
-npx wrangler d1 migrations apply mahoraga-db
+npx wrangler d1 migrations apply makora-db
 ```
 
 ### 3. Set secrets
 
 ```bash
 # Required
-npx wrangler secret put ALPACA_API_KEY
-npx wrangler secret put ALPACA_API_SECRET
+npx wrangler secret put ETORO_API_KEY
+npx wrangler secret put ETORO_USER_KEY
 
 # API Authentication - generate a secure random token (64+ chars recommended)
 # Example: openssl rand -base64 48
-npx wrangler secret put MAHORAGA_API_TOKEN
+npx wrangler secret put MAKORA_API_TOKEN
 
 # LLM Provider (choose one mode)
 npx wrangler secret put LLM_PROVIDER  # "openai-raw" (default), "ai-sdk", or "cloudflare-gateway"
@@ -81,7 +79,7 @@ npx wrangler secret put OPENAI_BASE_URL        # Optional: override OpenAI base 
 # npx wrangler secret put CLOUDFLARE_AI_GATEWAY_TOKEN       # For cloudflare-gateway
 
 # Optional
-npx wrangler secret put ALPACA_PAPER         # "true" for paper trading (recommended)
+npx wrangler secret put ETORO_ENV            # "demo" (default) or "real"
 npx wrangler secret put TWITTER_BEARER_TOKEN
 npx wrangler secret put DISCORD_WEBHOOK_URL
 npx wrangler secret put KILL_SWITCH_SECRET   # Emergency kill switch (separate from API token)
@@ -99,27 +97,27 @@ All API endpoints require authentication via Bearer token:
 
 ```bash
 # Set your API token as an env var for convenience
-export MAHORAGA_TOKEN="your-api-token"
+export MAKORA_TOKEN="your-api-token"
 
 # Enable the agent
-curl -H "Authorization: Bearer $MAHORAGA_TOKEN" \
-  https://mahoraga.bernardoalmeida2004.workers.dev/agent/enable
+curl -H "Authorization: Bearer $MAKORA_TOKEN" \
+  https://makora.bernardoalmeida2004.workers.dev/agent/enable
 ```
 
 ### 6. Monitor
 
 ```bash
 # Check status
-curl -H "Authorization: Bearer $MAHORAGA_TOKEN" \
-  https://mahoraga.bernardoalmeida2004.workers.dev/agent/status
+curl -H "Authorization: Bearer $MAKORA_TOKEN" \
+  https://makora.bernardoalmeida2004.workers.dev/agent/status
 
 # View logs
-curl -H "Authorization: Bearer $MAHORAGA_TOKEN" \
-  https://mahoraga.bernardoalmeida2004.workers.dev/agent/logs
+curl -H "Authorization: Bearer $MAKORA_TOKEN" \
+  https://makora.bernardoalmeida2004.workers.dev/agent/logs
 
 # Emergency kill switch (uses separate KILL_SWITCH_SECRET)
 curl -H "Authorization: Bearer $KILL_SWITCH_SECRET" \
-  https://mahoraga.bernardoalmeida2004.workers.dev/agent/kill
+  https://makora.bernardoalmeida2004.workers.dev/agent/kill
 
 # Run dashboard locally
 cd dashboard && npm install && npm run dev
@@ -135,13 +133,13 @@ npx wrangler dev
 cd dashboard && npm run dev
 
 # Terminal 3 - Enable the agent
-curl -H "Authorization: Bearer $MAHORAGA_TOKEN" \
+curl -H "Authorization: Bearer $MAKORA_TOKEN" \
   http://localhost:8787/agent/enable
 ```
 
 ## Customizing the Harness
 
-The main trading logic is in `src/durable-objects/mahoraga-harness.ts`. It's documented with markers to help you find what to modify:
+The main trading logic is in `src/durable-objects/makora-harness.ts`. It's documented with markers to help you find what to modify:
 
 | Marker | Meaning |
 |--------|---------|
@@ -167,14 +165,13 @@ See `docs/harness.html` for detailed customization guide.
 | `stop_loss_pct` | 5 | Stop loss percentage |
 | `min_sentiment_score` | 0.3 | Minimum sentiment to consider |
 | `min_analyst_confidence` | 0.6 | Minimum LLM confidence to trade |
-| `options_enabled` | false | Enable options trading |
 | `crypto_enabled` | false | Enable 24/7 crypto trading |
 | `llm_model` | gpt-4o-mini | Research model (cheap, for bulk analysis) |
 | `llm_analyst_model` | gpt-4o | Analyst model (smart, for trading decisions) |
 
 ### LLM Provider Configuration
 
-MAHORAGA supports multiple LLM providers via three modes:
+MAKORA supports multiple LLM providers via three modes:
 
 | Mode | Description | Required Env Vars |
 |------|-------------|-------------------|
@@ -227,10 +224,10 @@ npx wrangler secret put ANTHROPIC_API_KEY # Your Anthropic API key
 
 ### API Authentication (Required)
 
-All `/agent/*` endpoints require Bearer token authentication using `MAHORAGA_API_TOKEN`:
+All `/agent/*` endpoints require Bearer token authentication using `MAKORA_API_TOKEN`:
 
 ```bash
-curl -H "Authorization: Bearer $MAHORAGA_TOKEN" https://mahoraga.bernardoalmeida2004.workers.dev/agent/status
+curl -H "Authorization: Bearer $MAKORA_TOKEN" https://makora.bernardoalmeida2004.workers.dev/agent/status
 ```
 
 Generate a secure token: `openssl rand -base64 48`
@@ -240,7 +237,7 @@ Generate a secure token: `openssl rand -base64 48`
 The `/agent/kill` endpoint uses a separate `KILL_SWITCH_SECRET` for emergency shutdown:
 
 ```bash
-curl -H "Authorization: Bearer $KILL_SWITCH_SECRET" https://mahoraga.bernardoalmeida2004.workers.dev/agent/kill
+curl -H "Authorization: Bearer $KILL_SWITCH_SECRET" https://makora.bernardoalmeida2004.workers.dev/agent/kill
 ```
 
 This immediately disables the agent, cancels all alarms, and clears the signal cache.
@@ -256,8 +253,8 @@ For additional security with SSO/email verification, set up Cloudflare Access:
 # 2. Run the setup script
 CLOUDFLARE_API_TOKEN=your-token \
 CLOUDFLARE_ACCOUNT_ID=your-account-id \
-MAHORAGA_WORKER_URL=https://mahoraga.your-subdomain.workers.dev \
-MAHORAGA_ALLOWED_EMAILS=you@example.com \
+MAKORA_WORKER_URL=https://makora.your-subdomain.workers.dev \
+MAKORA_ALLOWED_EMAILS=you@example.com \
 npm run setup:access
 ```
 
@@ -266,16 +263,16 @@ This creates a Cloudflare Access Application with email verification or One-Time
 ## Project Structure
 
 ```
-mahoraga/
+makora/
 ├── wrangler.jsonc              # Cloudflare Workers config
 ├── src/
 │   ├── index.ts                # Entry point
 │   ├── durable-objects/
-│   │   ├── mahoraga-harness.ts # THE HARNESS - customize this!
+│   │   ├── makora-harness.ts # THE HARNESS - customize this!
 │   │   └── session.ts
 │   ├── mcp/                    # MCP server & tools
 │   ├── policy/                 # Trade validation
-│   └── providers/              # Alpaca, OpenAI clients
+│   └── providers/              # eToro, OpenAI clients
 ├── dashboard/                  # React dashboard
 ├── docs/                       # Documentation
 └── migrations/                 # D1 database migrations
@@ -285,19 +282,13 @@ mahoraga/
 
 | Feature | Description |
 |---------|-------------|
-| Paper Trading | Start with `ALPACA_PAPER=true` |
+| Demo Trading | Set `ETORO_ENV=demo` |
 | Kill Switch | Emergency halt via secret |
 | Position Limits | Max positions and $ per position |
 | Daily Loss Limit | Stops trading after 2% daily loss |
 | Staleness Detection | Auto-exit stale positions |
 | No Margin | Cash-only trading |
 | No Shorting | Long positions only |
-
-## Community
-
-Join our Discord for help and discussion:
-
-**[Discord Server](https://discord.gg/Ys8KpsW5NN)**
 
 ## Disclaimer
 

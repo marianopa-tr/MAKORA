@@ -14,7 +14,7 @@ import type { Status, Config, LogEntry, Signal, Position, SignalResearch, Portfo
 const API_BASE = '/api'
 
 function getApiToken(): string {
-  return localStorage.getItem('mahoraga_api_token') || (window as unknown as { VITE_MAHORAGA_API_TOKEN?: string }).VITE_MAHORAGA_API_TOKEN || ''
+  return localStorage.getItem('makora_api_token') || (window as unknown as { VITE_MAKORA_API_TOKEN?: string }).VITE_MAKORA_API_TOKEN || ''
 }
 
 function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -205,6 +205,9 @@ export default function App() {
   const realizedPl = totalPl - unrealizedPl
   const totalPlPct = account ? (totalPl / startingEquity) * 100 : 0
 
+  const positionsValue = positions.reduce((sum, p) => sum + p.market_value, 0)
+  const positionsUnrealizedPct = positionsValue ? (unrealizedPl / positionsValue) * 100 : 0
+
   // Color palette for position lines (distinct colors for each stock)
   const positionColors = ['cyan', 'purple', 'yellow', 'blue', 'green'] as const
 
@@ -216,6 +219,12 @@ export default function App() {
     })
     return histories
   }, [positions.map(p => p.symbol).join(',')])
+
+  const showHistoryChart = portfolioHistory.length > 1
+
+  const topPositionsByValue = useMemo(() => {
+    return [...positions].sort((a, b) => b.market_value - a.market_value).slice(0, 5)
+  }, [positions])
 
   // Chart data derived from portfolio history
   const portfolioChartData = useMemo(() => {
@@ -301,9 +310,9 @@ export default function App() {
                   <input
                     type="password"
                     className="hud-input w-full mb-2"
-                    placeholder="Enter MAHORAGA_API_TOKEN"
-                    defaultValue={localStorage.getItem('mahoraga_api_token') || ''}
-                    onChange={(e) => localStorage.setItem('mahoraga_api_token', e.target.value)}
+                    placeholder="Enter MAKORA_API_TOKEN"
+                    defaultValue={localStorage.getItem('makora_api_token') || ''}
+                    onChange={(e) => localStorage.setItem('makora_api_token', e.target.value)}
                   />
                   <button 
                     onClick={() => window.location.reload()}
@@ -334,7 +343,7 @@ export default function App() {
           <div className="flex items-center gap-4 md:gap-6">
             <div className="flex items-baseline gap-2">
               <span className="text-xl md:text-2xl font-light tracking-tight text-hud-text-bright">
-                MAHORAGA
+                MAKORA
               </span>
               <span className="hud-label">v2</span>
             </div>
@@ -527,7 +536,7 @@ export default function App() {
               } 
               className="h-[320px]"
             >
-              {portfolioChartData.length > 1 ? (
+              {showHistoryChart ? (
                 <div className="h-full w-full">
                   <LineChart
                     series={[{ label: 'Equity', data: portfolioChartData, variant: totalPl >= 0 ? 'green' : 'red' }]}
@@ -541,8 +550,43 @@ export default function App() {
                   />
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-hud-text-dim text-sm">
-                  Collecting performance data...
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+                  <div className="border border-hud-line/40 rounded p-3 flex flex-col justify-between">
+                    <div className="hud-label text-hud-text-dim">OPEN POSITIONS SUMMARY</div>
+                    <div className="mt-3 space-y-2">
+                      <MetricInline label="COUNT" value={positions.length} />
+                      <MetricInline label="TOTAL VALUE" value={formatCurrency(positionsValue)} />
+                      <MetricInline
+                        label="UNREALIZED"
+                        value={`${formatCurrency(unrealizedPl)} (${formatPercent(positionsUnrealizedPct)})`}
+                        color={unrealizedPl >= 0 ? 'success' : 'error'}
+                      />
+                    </div>
+                    <div className="mt-4 text-xs text-hud-text-dim">
+                      Live snapshot based on current eToro rates.
+                    </div>
+                  </div>
+                  <div className="border border-hud-line/40 rounded p-3 flex flex-col">
+                    <div className="hud-label text-hud-text-dim">TOP POSITIONS</div>
+                    {positions.length === 0 ? (
+                      <div className="text-hud-text-dim text-sm mt-4">No open positions</div>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {topPositionsByValue.map((pos) => {
+                          const plPct = (pos.unrealized_pl / (pos.market_value || 1)) * 100
+                          return (
+                            <div key={pos.symbol} className="flex justify-between items-center text-xs">
+                              <span className="hud-value-sm">{pos.symbol}</span>
+                              <span className="hud-value-sm">{formatCurrency(pos.market_value)}</span>
+                              <span className={clsx('hud-value-sm', pos.unrealized_pl >= 0 ? 'text-hud-success' : 'text-hud-error')}>
+                                {formatPercent(plPct)}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </Panel>
@@ -816,7 +860,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             <span className="hud-label hidden md:inline">AUTONOMOUS TRADING SYSTEM</span>
-            <span className="hud-value-sm">PAPER MODE</span>
+            <span className="hud-value-sm">DEMO MODE</span>
           </div>
         </footer>
       </div>

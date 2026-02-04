@@ -2,22 +2,22 @@
 /**
  * Cloudflare Access Setup Script
  * 
- * Sets up Cloudflare Access to protect your MAHORAGA worker endpoints.
+ * Sets up Cloudflare Access to protect your MAKORA worker endpoints.
  * This provides SSO, email verification, or one-time PIN authentication.
  * 
  * Required environment variables:
  *   CLOUDFLARE_API_TOKEN - API token with Access:Edit permissions
  *   CLOUDFLARE_ACCOUNT_ID - Your Cloudflare account ID
- *   MAHORAGA_WORKER_URL - Your worker URL (e.g., https://mahoraga.your-subdomain.workers.dev)
+ *   MAKORA_WORKER_URL - Your worker URL (e.g., https://makora.your-subdomain.workers.dev)
  * 
  * Optional:
- *   MAHORAGA_ALLOWED_EMAILS - Comma-separated list of allowed emails
+ *   MAKORA_ALLOWED_EMAILS - Comma-separated list of allowed emails
  * 
  * Usage:
  *   npx tsx scripts/setup-access.ts
  * 
  * Or with environment variables inline:
- *   CLOUDFLARE_API_TOKEN=xxx CLOUDFLARE_ACCOUNT_ID=yyy MAHORAGA_WORKER_URL=https://... npx tsx scripts/setup-access.ts
+ *   CLOUDFLARE_API_TOKEN=xxx CLOUDFLARE_ACCOUNT_ID=yyy MAKORA_WORKER_URL=https://... npx tsx scripts/setup-access.ts
  */
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
@@ -146,11 +146,11 @@ function extractDomain(url: string): string {
 }
 
 async function main() {
-  console.log("\n🔐 MAHORAGA Cloudflare Access Setup\n");
+  console.log("\n🔐 MAKORA Cloudflare Access Setup\n");
 
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const workerUrl = process.env.MAHORAGA_WORKER_URL;
-  const allowedEmails = process.env.MAHORAGA_ALLOWED_EMAILS?.split(",").map((e) => e.trim()).filter(Boolean) || [];
+  const workerUrl = process.env.MAKORA_WORKER_URL;
+  const allowedEmails = process.env.MAKORA_ALLOWED_EMAILS?.split(",").map((e) => e.trim()).filter(Boolean) || [];
 
   if (!accountId) {
     console.error("❌ CLOUDFLARE_ACCOUNT_ID is required");
@@ -159,8 +159,8 @@ async function main() {
   }
 
   if (!workerUrl) {
-    console.error("❌ MAHORAGA_WORKER_URL is required");
-    console.error("   Example: https://mahoraga.your-subdomain.workers.dev");
+    console.error("❌ MAKORA_WORKER_URL is required");
+    console.error("   Example: https://makora.your-subdomain.workers.dev");
     process.exit(1);
   }
 
@@ -172,7 +172,7 @@ async function main() {
   }
 
   const domain = extractDomain(workerUrl);
-  const appName = "MAHORAGA Trading Agent";
+  const appName = "MAKORA Trading Agent";
 
   console.log(`Account ID: ${accountId}`);
   console.log(`Worker URL: ${workerUrl}`);
@@ -201,14 +201,14 @@ async function main() {
 
   console.log("\n" + "=".repeat(60));
   console.log("✅ Cloudflare Access Setup Complete!\n");
-  console.log("Your MAHORAGA endpoints are now protected.");
+  console.log("Your MAKORA endpoints are now protected.");
   console.log(`Dashboard: https://one.dash.cloudflare.com/${accountId}/access/apps/${app.id}`);
   
   if (allowedEmails.length === 0) {
     console.log("\n📧 Authentication: One-Time PIN");
     console.log("   Users will receive an email with a code to access the dashboard.");
     console.log("   To restrict to specific emails, re-run with:");
-    console.log("   MAHORAGA_ALLOWED_EMAILS=you@example.com,team@example.com npx tsx scripts/setup-access.ts");
+    console.log("   MAKORA_ALLOWED_EMAILS=you@example.com,team@example.com npx tsx scripts/setup-access.ts");
   } else {
     console.log(`\n📧 Authentication: Email allowlist (${allowedEmails.length} users)`);
   }

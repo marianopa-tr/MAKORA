@@ -72,7 +72,7 @@ export interface OrderApprovalRow {
 export interface TradeRow {
   id: string;
   approval_id: string | null;
-  alpaca_order_id: string;
+  broker_order_id: string;
   symbol: string;
   side: string;
   qty: number;

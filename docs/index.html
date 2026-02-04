@@ -3,33 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MAHORAGA — Open Source AI Trading Agent | LLM-Powered Autonomous Trading</title>
-  <meta name="description" content="Open-source autonomous trading agent powered by LLMs. Monitor social sentiment from StockTwits and Reddit, execute trades via Alpaca, run 24/7 on Cloudflare Workers.">
-  <link rel="canonical" href="https://mahoraga.dev/">
-  <link rel="icon" type="image/svg+xml" href="/mahoraga.svg">
+  <title>MAKORA — Open Source AI Trading Agent | LLM-Powered Autonomous Trading</title>
+  <meta name="description" content="Open-source autonomous trading agent powered by LLMs. Monitor social sentiment from StockTwits and Reddit, execute trades via eToro, run 24/7 on Cloudflare Workers.">
+  <link rel="canonical" href="https://makora.dev/">
+  <link rel="icon" type="image/svg+xml" href="/makora.svg">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="MAHORAGA — Open Source AI Trading Agent">
-  <meta property="og:description" content="Autonomous trading agent powered by LLMs. Monitor social sentiment, execute trades via Alpaca, run 24/7 on Cloudflare Workers.">
-  <meta property="og:image" content="https://mahoraga.dev/og-image.png">
-  <meta property="og:url" content="https://mahoraga.dev/">
+  <meta property="og:title" content="MAKORA — Open Source AI Trading Agent">
+  <meta property="og:description" content="Autonomous trading agent powered by LLMs. Monitor social sentiment, execute trades via eToro, run 24/7 on Cloudflare Workers.">
+  <meta property="og:image" content="https://makora.dev/og-image.png">
+  <meta property="og:url" content="https://makora.dev/">
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="MAHORAGA">
+  <meta property="og:site_name" content="MAKORA">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="MAHORAGA — Open Source AI Trading Agent">
+  <meta name="twitter:title" content="MAKORA — Open Source AI Trading Agent">
   <meta name="twitter:description" content="Autonomous trading agent powered by LLMs. Monitor sentiment, execute trades, run 24/7.">
-  <meta name="twitter:image" content="https://mahoraga.dev/og-image.png">
+  <meta name="twitter:image" content="https://makora.dev/og-image.png">
 
   <!-- Structured Data: SoftwareApplication -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "MAHORAGA",
-    "description": "Open-source autonomous trading agent powered by LLMs. Monitors social sentiment from StockTwits and Reddit, executes trades via Alpaca, runs 24/7 on Cloudflare Workers.",
-    "url": "https://mahoraga.dev/",
+    "name": "MAKORA",
+    "description": "Open-source autonomous trading agent powered by LLMs. Monitors social sentiment from StockTwits and Reddit, executes trades via eToro, runs 24/7 on Cloudflare Workers.",
+    "url": "https://makora.dev/",
     "applicationCategory": "FinanceApplication",
     "operatingSystem": "Cloudflare Workers",
     "offers": {
@@ -43,7 +43,7 @@
       "url": "https://x.com/burcs"
     },
     "license": "https://opensource.org/licenses/MIT",
-    "codeRepository": "https://github.com/ygwyg/MAHORAGA"
+    "codeRepository": "https://github.com/ygwyg/MAKORA"
   }
   </script>
 
@@ -63,10 +63,10 @@
       },
       {
         "@type": "Question",
-        "name": "How much does it cost to run MAHORAGA?",
+        "name": "How much does it cost to run MAKORA?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "LLM costs are typically $0.50-2/day using gpt-4o-mini. Cloudflare Workers free tier. Alpaca is free."
+          "text": "LLM costs are typically $0.50-2/day using gpt-4o-mini. Cloudflare Workers free tier. eToro API access required."
         }
       },
       {
@@ -74,7 +74,7 @@
         "name": "Is this safe to use with real money?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Paper trading is enabled by default. Built-in safety includes kill switch, stop losses, position limits, and daily loss limits."
+          "text": "Demo trading is enabled by default via ETORO_ENV=demo. Built-in safety includes kill switch, stop losses, position limits, and daily loss limits."
         }
       },
       {
@@ -828,18 +828,13 @@
   </style>
 </head>
 <body>
-  <div class="promo-banner" id="promo-banner">
-    <span class="promo-leader" id="leader-name">Loading...</span> is winning the leaderboard with <span class="promo-roi" id="leader-roi">+0%</span> ROI. Can you beat them?
-    <a href="https://sukuna.dev" target="_blank">Join the competition →</a>
-  </div>
-
   <header>
     <div class="container header-inner">
-      <a href="./" class="logo"><img src="./mahoraga.svg" alt="MAHORAGA logo">MAHORAGA</a>
+      <a href="./" class="logo"><img src="./makora.svg" alt="MAKORA logo">MAKORA</a>
       <nav>
         <a href="./getting-started.html">Docs</a>
-        <a href="https://github.com/ygwyg/MAHORAGA">GitHub</a>
-        <a href="https://discord.gg/Ys8KpsW5NN">Discord</a>
+        <a href="https://github.com/marianopa-tr/MAKORA">GitHub</a>
+        <a href="https://etoro.com">eToro</a>
         <a href="./getting-started.html" class="btn-primary">Get Started</a>
       </nav>
     </div>
@@ -868,7 +863,7 @@
               <span class="value">Live</span>
             </div>
           </div>
-          <img src="dashboard.png" alt="MAHORAGA Dashboard" loading="lazy">
+          <img src="dashboard.png" alt="MAKORA Dashboard" loading="lazy">
         </div>
       </div>
     </section>
@@ -879,7 +874,7 @@
           <div class="card wide">
             <div class="card-label">How it works</div>
             <h3 class="card-title">Monitor. Analyze. Execute.</h3>
-            <p class="card-desc">The agent monitors StockTwits and Reddit for trending tickers. Each signal is researched by the LLM—analyzing sentiment, timing, catalysts, and red flags. If confidence is high enough, it executes via Alpaca and monitors the position.</p>
+            <p class="card-desc">The agent monitors StockTwits and Reddit for trending tickers. Each signal is researched by the LLM—analyzing sentiment, timing, catalysts, and red flags. If confidence is high enough, it executes via eToro and monitors the position.</p>
             <div class="card-visual">
               <div class="flow" id="signal-flow">
                 <span class="flow-item" data-step="0"><span class="flow-ticker">$NVDA</span> trending</span>
@@ -1012,7 +1007,7 @@
           </div>
           <div class="faq-item">
             <div class="faq-q">How much does it cost to run?</div>
-            <div class="faq-a">LLM costs are typically $0.50-2/day using gpt-4o-mini. Cloudflare Workers free tier. Alpaca is free.</div>
+            <div class="faq-a">LLM costs are typically $0.50-2/day using gpt-4o-mini. Cloudflare Workers free tier. eToro API access required.</div>
           </div>
           <div class="faq-item">
             <div class="faq-q">Is this safe to use with real money?</div>
@@ -1049,14 +1044,15 @@
   <footer>
     <div class="container footer-inner">
       <div class="footer-links">
-        <a href="https://github.com/ygwyg/MAHORAGA">GitHub</a>
+        <a href="https://github.com/ygwyg/MAKORA">GitHub</a>
         <a href="./getting-started.html">Documentation</a>
         <a href="./architecture.html">Architecture</a>
-        <a href="https://discord.gg/Ys8KpsW5NN">Discord</a>
+        <a href="https://etoro.com">eToro</a>
       </div>
       <div class="footer-right">
         <span>MIT License</span>
-        <span>by <a href="https://x.com/burcs">@burcs</a></span>
+        <span>by <a href="https://x.com/marian2js">@marian2js</a></span>
+        <span>forked from MAHORAGA</a> by <a href="https://x.com/burcs">@burcs</a></span>
       </div>
     </div>
   </footer>

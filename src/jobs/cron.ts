@@ -1,5 +1,5 @@
 import type { Env } from "../env.d";
-import { createAlpacaProviders } from "../providers/alpaca";
+import { createEtoroProviders } from "../providers/etoro";
 import { createSECEdgarProvider } from "../providers/news/sec-edgar";
 import { createD1Client } from "../storage/d1/client";
 import { cleanupExpiredApprovals } from "../storage/d1/queries/approvals";
@@ -37,10 +37,10 @@ async function runEventIngestion(env: Env): Promise<void> {
   console.log("Starting event ingestion...");
 
   const db = createD1Client(env.DB);
-  const alpaca = createAlpacaProviders(env);
+  const broker = createEtoroProviders(env);
 
   try {
-    const clock = await alpaca.trading.getClock();
+    const clock = await broker.trading.getClock();
 
     if (!clock.is_open) {
       console.log("Market closed, skipping event ingestion");
@@ -97,11 +97,11 @@ async function runMarketCloseCleanup(env: Env): Promise<void> {
   console.log("Running market close cleanup...");
 
   const db = createD1Client(env.DB);
-  const alpaca = createAlpacaProviders(env);
+  const broker = createEtoroProviders(env);
 
   try {
-    const positions = await alpaca.trading.getPositions();
-    const account = await alpaca.trading.getAccount();
+    const positions = await broker.trading.getPositions();
+    const account = await broker.trading.getAccount();
 
     console.log(`End of day: ${positions.length} positions, equity=${account.equity}`);
 

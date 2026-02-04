@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
-	"name": "mahoraga",
+	"name": "makora",
 	"main": "src/index.ts",
 	"compatibility_date": "2024-12-01",
 	"compatibility_flags": [
@@ -19,9 +19,9 @@
 	},
 	// Secrets (set via `wrangler secret put <NAME>`):
 	// Required:
-	// - ALPACA_API_KEY
-	// - ALPACA_API_SECRET
-	// - MAHORAGA_API_TOKEN (API authentication - generate with: openssl rand -base64 48)
+	// - ETORO_API_KEY
+	// - ETORO_USER_KEY
+	// - MAKORA_API_TOKEN (API authentication - generate with: openssl rand -base64 48)
 	// - KILL_SWITCH_SECRET (emergency kill switch + approval token signing)
 	// 
 	// LLM Provider (choose one mode):
@@ -38,13 +38,13 @@
 	// - AI_GATEWAY_API_KEY (for vercel-gateway unified access)
 	//
 	// Optional:
-	// - ALPACA_PAPER ("true" for paper trading)
+	// - ETORO_ENV ("demo" or "real")
 	// - TWITTER_BEARER_TOKEN
 	// - DISCORD_WEBHOOK_URL
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "mahoraga-db",
+			"database_name": "makora-db",
 			"database_id": "<YOUR_D1_DATABASE_ID>",
 			"migrations_dir": "migrations"
 		}
@@ -58,7 +58,7 @@
 	"r2_buckets": [
 		{
 			"binding": "ARTIFACTS",
-			"bucket_name": "mahoraga-artifacts"
+			"bucket_name": "makora-artifacts"
 		}
 	],
 	"durable_objects": {
@@ -69,11 +69,11 @@
 			},
 			{
 				"name": "MCP_AGENT",
-				"class_name": "MahoragaMcpAgent"
+				"class_name": "MakoraMcpAgent"
 			},
 			{
-				"name": "MAHORAGA_HARNESS",
-				"class_name": "MahoragaHarness"
+				"name": "MAKORA_HARNESS",
+				"class_name": "MakoraHarness"
 			}
 		]
 	},
@@ -82,8 +82,8 @@
 			"tag": "v1",
 			"new_sqlite_classes": [
 				"SessionDO",
-				"MahoragaMcpAgent",
-				"MahoragaHarness"
+				"MakoraMcpAgent",
+				"MakoraHarness"
 			]
 		}
 	],

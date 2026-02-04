@@ -1,5 +1,5 @@
 /**
- * MahoragaHarness - Autonomous Trading Agent Durable Object
+ * MakoraHarness - Autonomous Trading Agent Durable Object
  *
  * A fully autonomous trading agent that runs 24/7 on Cloudflare Workers.
  * This is the "harness" - customize it to match your trading strategy.
@@ -36,8 +36,8 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import type { Env } from "../env.d";
-import { createAlpacaProviders } from "../providers/alpaca";
+import type { Env } from "../env";
+import { createEtoroProviders } from "../providers/etoro";
 import { createLLMProvider } from "../providers/llm/factory";
 import type { Account, LLMProvider, MarketClock, Position } from "../providers/types";
 
@@ -74,7 +74,7 @@ interface AgentConfig {
   stale_social_volume_decay: number; // [TUNE] Exit if volume drops to this % of entry
 
   // LLM configuration
-  llm_provider: "openai-raw" | "ai-sdk" | "cloudflare-gateway"; // [TUNE] Provider: openai-raw, ai-sdk, cloudflare-gateway
+  llm_provider: "openai-raw" | "ai-sdk" | "cloudflare-gateway" | "azure-openai"; // [TUNE] Provider: openai-raw, ai-sdk, cloudflare-gateway, azure-openai
   llm_model: string; // [TUNE] Model for quick research (gpt-4o-mini)
   llm_analyst_model: string; // [TUNE] Model for deep analysis (gpt-4o)
   llm_min_hold_minutes: number; // [TUNE] Min minutes before LLM can recommend sell (default: 30)
@@ -612,7 +612,7 @@ const TICKER_BLACKLIST = new Set([
 class ValidTickerCache {
   private secTickers: Set<string> | null = null;
   private lastSecRefresh = 0;
-  private alpacaCache: Map<string, boolean> = new Map();
+  private brokerCache: Map<string, boolean> = new Map();
   private readonly SEC_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   async refreshSecTickersIfNeeded(): Promise<void> {
@@ -621,7 +621,7 @@ class ValidTickerCache {
     }
     try {
       const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
-        headers: { "User-Agent": "Mahoraga Trading Bot" },
+        headers: { "User-Agent": "Makora Trading Bot" },
       });
       if (!res.ok) return;
       const data = (await res.json()) as Record<string, { cik_str: number; ticker: string; title: string }>;
@@ -637,28 +637,28 @@ class ValidTickerCache {
   }
 
   getCachedValidation(symbol: string): boolean | undefined {
-    return this.alpacaCache.get(symbol.toUpperCase());
+    return this.brokerCache.get(symbol.toUpperCase());
   }
 
   setCachedValidation(symbol: string, isValid: boolean): void {
-    this.alpacaCache.set(symbol.toUpperCase(), isValid);
+    this.brokerCache.set(symbol.toUpperCase(), isValid);
   }
 
-  async validateWithAlpaca(
+  async validateWithBroker(
     symbol: string,
-    alpaca: { trading: { getAsset(s: string): Promise<{ tradable: boolean } | null> } }
+    broker: { trading: { getAsset(s: string): Promise<{ tradable: boolean } | null> } }
   ): Promise<boolean> {
     const upper = symbol.toUpperCase();
-    const cached = this.alpacaCache.get(upper);
+    const cached = this.brokerCache.get(upper);
     if (cached !== undefined) return cached;
 
     try {
-      const asset = await alpaca.trading.getAsset(upper);
+      const asset = await broker.trading.getAsset(upper);
       const isValid = asset !== null && asset.tradable;
-      this.alpacaCache.set(upper, isValid);
+      this.brokerCache.set(upper, isValid);
       return isValid;
     } catch {
-      this.alpacaCache.set(upper, false);
+      this.brokerCache.set(upper, false);
       return false;
     }
   }
@@ -815,7 +815,7 @@ function detectSentiment(text: string): number {
 // Add new HTTP endpoints in fetch() for custom dashboard controls.
 // ============================================================================
 
-export class MahoragaHarness extends DurableObject<Env> {
+export class MakoraHarness extends DurableObject<Env> {
   private state: AgentState = { ...DEFAULT_STATE };
   private _llm: LLMProvider | null = null;
 
@@ -824,9 +824,9 @@ export class MahoragaHarness extends DurableObject<Env> {
 
     this._llm = createLLMProvider(env);
     if (this._llm) {
-      console.log(`[MahoragaHarness] LLM Provider initialized: ${env.LLM_PROVIDER || "openai-raw"}`);
+      console.log(`[MakoraHarness] LLM Provider initialized: ${env.LLM_PROVIDER || "openai-raw"}`);
     } else {
-      console.log("[MahoragaHarness] WARNING: No valid LLM provider configured - research disabled");
+      console.log("[MakoraHarness] WARNING: No valid LLM provider configured - research disabled");
     }
 
     this.ctx.blockConcurrencyWhile(async () => {
@@ -849,8 +849,13 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private initializeLLM() {
-    const provider = this.state.config.llm_provider || this.env.LLM_PROVIDER || "openai-raw";
-    const model = this.state.config.llm_model || this.env.LLM_MODEL || "gpt-4o-mini";
+    const configProvider = this.state.config.llm_provider;
+    const configModel = this.state.config.llm_model;
+    const envProvider = this.env.LLM_PROVIDER;
+    const envModel = this.env.LLM_MODEL;
+
+    const provider = configProvider || envProvider || "openai-raw";
+    const model = configModel || envModel || "gpt-4o-mini";
 
     const effectiveEnv: Env = {
       ...this.env,
@@ -859,10 +864,23 @@ export class MahoragaHarness extends DurableObject<Env> {
     };
 
     this._llm = createLLMProvider(effectiveEnv);
+    if (!this._llm && envProvider && (envProvider !== configProvider || envModel !== configModel)) {
+      const fallbackModel = envModel ?? model;
+      const fallbackEnv: Env = {
+        ...this.env,
+        LLM_PROVIDER: envProvider as Env["LLM_PROVIDER"],
+        LLM_MODEL: fallbackModel,
+      };
+      this._llm = createLLMProvider(fallbackEnv);
+      if (this._llm) {
+        console.log(`[MakoraHarness] LLM Provider fallback to env: ${envProvider} (${fallbackModel})`);
+        return;
+      }
+    }
     if (this._llm) {
-      console.log(`[MahoragaHarness] LLM Provider initialized: ${provider} (${model})`);
+      console.log(`[MakoraHarness] LLM Provider initialized: ${provider} (${model})`);
     } else {
-      console.log("[MahoragaHarness] WARNING: No valid LLM provider configured");
+      console.log("[MakoraHarness] WARNING: No valid LLM provider configured");
     }
   }
 
@@ -886,8 +904,8 @@ export class MahoragaHarness extends DurableObject<Env> {
     const POSITION_RESEARCH_INTERVAL_MS = 300_000;
 
     try {
-      const alpaca = createAlpacaProviders(this.env);
-      const clock = await alpaca.trading.getClock();
+      const broker = createEtoroProviders(this.env);
+      const clock = await broker.trading.getClock();
 
       if (now - this.state.lastDataGatherRun >= this.state.config.data_poll_interval_ms) {
         await this.runDataGatherers();
@@ -903,10 +921,10 @@ export class MahoragaHarness extends DurableObject<Env> {
         await this.runPreMarketAnalysis();
       }
 
-      const positions = await alpaca.trading.getPositions();
+      const positions = await broker.trading.getPositions();
 
       if (this.state.config.crypto_enabled) {
-        await this.runCryptoTrading(alpaca, positions);
+        await this.runCryptoTrading(broker, positions);
       }
 
       if (clock.is_open) {
@@ -930,7 +948,7 @@ export class MahoragaHarness extends DurableObject<Env> {
         if (this.isOptionsEnabled()) {
           const optionsExits = await this.checkOptionsExits(positions);
           for (const exit of optionsExits) {
-            await this.executeSell(alpaca, exit.symbol, exit.reason);
+            await this.executeSell(broker, exit.symbol, exit.reason);
           }
         }
 
@@ -978,9 +996,9 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private isAuthorized(request: Request): boolean {
-    const token = this.env.MAHORAGA_API_TOKEN;
+    const token = this.env.MAKORA_API_TOKEN;
     if (!token) {
-      console.warn("[MahoragaHarness] MAHORAGA_API_TOKEN not set - denying request");
+      console.warn("[MakoraHarness] MAKORA_API_TOKEN not set - denying request");
       return false;
     }
     const authHeader = request.headers.get("Authorization");
@@ -1004,7 +1022,7 @@ export class MahoragaHarness extends DurableObject<Env> {
 
   private unauthorizedResponse(): Response {
     return new Response(
-      JSON.stringify({ error: "Unauthorized. Requires: Authorization: Bearer <MAHORAGA_API_TOKEN>" }),
+      JSON.stringify({ error: "Unauthorized. Requires: Authorization: Bearer <MAKORA_API_TOKEN>" }),
       { status: 401, headers: { "Content-Type": "application/json" } }
     );
   }
@@ -1088,7 +1106,7 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private async handleStatus(): Promise<Response> {
-    const alpaca = createAlpacaProviders(this.env);
+    const broker = createEtoroProviders(this.env);
 
     let account: Account | null = null;
     let positions: Position[] = [];
@@ -1096,9 +1114,9 @@ export class MahoragaHarness extends DurableObject<Env> {
 
     try {
       [account, positions, clock] = await Promise.all([
-        alpaca.trading.getAccount(),
-        alpaca.trading.getPositions(),
-        alpaca.trading.getClock(),
+        broker.trading.getAccount(),
+        broker.trading.getPositions(),
+        broker.trading.getClock(),
       ]);
 
       for (const pos of positions || []) {
@@ -1137,7 +1155,11 @@ export class MahoragaHarness extends DurableObject<Env> {
 
   private async handleUpdateConfig(request: Request): Promise<Response> {
     const body = (await request.json()) as Partial<AgentConfig>;
-    this.state.config = { ...this.state.config, ...body };
+    const nextConfig = { ...this.state.config, ...body };
+    if ((this.env.ETORO_API_KEY || this.env.ETORO_USER_KEY) && nextConfig.options_enabled) {
+      nextConfig.options_enabled = false;
+    }
+    this.state.config = nextConfig;
     this.initializeLLM();
     await this.persist();
     return this.jsonResponse({ ok: true, config: this.state.config });
@@ -1166,7 +1188,7 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private async handleGetHistory(url: URL): Promise<Response> {
-    const alpaca = createAlpacaProviders(this.env);
+    const broker = createEtoroProviders(this.env);
     const period = url.searchParams.get("period") || "1M";
     const timeframe = url.searchParams.get("timeframe") || "1D";
     const intradayReporting = url.searchParams.get("intraday_reporting") as
@@ -1176,7 +1198,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       | null;
 
     try {
-      const history = await alpaca.trading.getPortfolioHistory({
+      const history = await broker.trading.getPortfolioHistory({
         period,
         timeframe,
         intraday_reporting: intradayReporting || "extended_hours",
@@ -1392,7 +1414,7 @@ export class MahoragaHarness extends DurableObject<Env> {
 
       try {
         const res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=25`, {
-          headers: { "User-Agent": "Mahoraga/2.0" },
+          headers: { "User-Agent": "Makora/2.0" },
         });
         if (!res.ok) continue;
         const data = (await res.json()) as {
@@ -1463,7 +1485,7 @@ export class MahoragaHarness extends DurableObject<Env> {
     }
 
     const signals: Signal[] = [];
-    const alpaca = createAlpacaProviders(this.env);
+    const broker = createEtoroProviders(this.env);
 
     for (const [symbol, data] of tickerData) {
       if (data.mentions >= 2) {
@@ -1471,7 +1493,7 @@ export class MahoragaHarness extends DurableObject<Env> {
           const cached = tickerCache.getCachedValidation(symbol);
           if (cached === false) continue;
           if (cached === undefined) {
-            const isValid = await tickerCache.validateWithAlpaca(symbol, alpaca);
+            const isValid = await tickerCache.validateWithBroker(symbol, broker);
             if (!isValid) {
               this.log("Reddit", "invalid_ticker_filtered", { symbol });
               continue;
@@ -1512,11 +1534,11 @@ export class MahoragaHarness extends DurableObject<Env> {
 
     const signals: Signal[] = [];
     const symbols = this.state.config.crypto_symbols || ["BTC/USD", "ETH/USD", "SOL/USD"];
-    const alpaca = createAlpacaProviders(this.env);
+    const broker = createEtoroProviders(this.env);
 
     for (const symbol of symbols) {
       try {
-        const snapshot = await alpaca.marketData.getCryptoSnapshot(symbol);
+        const snapshot = await broker.marketData.getCryptoSnapshot(symbol);
         if (!snapshot) continue;
 
         const price = snapshot.latest_trade?.price || 0;
@@ -1567,7 +1589,7 @@ export class MahoragaHarness extends DurableObject<Env> {
         "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=40&output=atom",
         {
           headers: {
-            "User-Agent": "Mahoraga Trading Bot (contact@example.com)",
+            "User-Agent": "Makora Trading Bot (contact@example.com)",
             Accept: "application/atom+xml",
           },
         }
@@ -1581,7 +1603,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       const text = await response.text();
       const entries = this.parseSECAtomFeed(text);
 
-      const alpaca = createAlpacaProviders(this.env);
+      const broker = createEtoroProviders(this.env);
 
       for (const entry of entries.slice(0, 15)) {
         const ticker = await this.resolveTickerFromCompanyName(entry.company);
@@ -1590,7 +1612,7 @@ export class MahoragaHarness extends DurableObject<Env> {
         const cached = tickerCache.getCachedValidation(ticker);
         if (cached === false) continue;
         if (cached === undefined) {
-          const isValid = await tickerCache.validateWithAlpaca(ticker, alpaca);
+          const isValid = await tickerCache.validateWithBroker(ticker, broker);
           if (!isValid) continue;
         }
 
@@ -1679,7 +1701,7 @@ export class MahoragaHarness extends DurableObject<Env> {
 
     try {
       const response = await fetch("https://www.sec.gov/files/company_tickers.json", {
-        headers: { "User-Agent": "Mahoraga Trading Bot" },
+        headers: { "User-Agent": "Makora Trading Bot" },
       });
 
       if (!response.ok) return null;
@@ -1721,7 +1743,7 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private async runCryptoTrading(
-    alpaca: ReturnType<typeof createAlpacaProviders>,
+    broker: ReturnType<typeof createEtoroProviders>,
     positions: Position[]
   ): Promise<void> {
     if (!this.state.config.crypto_enabled) return;
@@ -1735,13 +1757,13 @@ export class MahoragaHarness extends DurableObject<Env> {
 
       if (plPct >= this.state.config.crypto_take_profit_pct) {
         this.log("Crypto", "take_profit", { symbol: pos.symbol, pnl: plPct.toFixed(2) });
-        await this.executeSell(alpaca, pos.symbol, `Crypto take profit at +${plPct.toFixed(1)}%`);
+        await this.executeSell(broker, pos.symbol, `Crypto take profit at +${plPct.toFixed(1)}%`);
         continue;
       }
 
       if (plPct <= -this.state.config.crypto_stop_loss_pct) {
         this.log("Crypto", "stop_loss", { symbol: pos.symbol, pnl: plPct.toFixed(2) });
-        await this.executeSell(alpaca, pos.symbol, `Crypto stop loss at ${plPct.toFixed(1)}%`);
+        await this.executeSell(broker, pos.symbol, `Crypto stop loss at ${plPct.toFixed(1)}%`);
       }
     }
 
@@ -1779,8 +1801,8 @@ export class MahoragaHarness extends DurableObject<Env> {
         continue;
       }
 
-      const account = await alpaca.trading.getAccount();
-      const result = await this.executeCryptoBuy(alpaca, signal.symbol, research.confidence, account);
+      const account = await broker.trading.getAccount();
+      const result = await this.executeCryptoBuy(broker, signal.symbol, research.confidence, account);
 
       if (result) {
         heldCrypto.add(signal.symbol);
@@ -1797,8 +1819,8 @@ export class MahoragaHarness extends DurableObject<Env> {
     }
 
     try {
-      const alpaca = createAlpacaProviders(this.env);
-      const snapshot = await alpaca.marketData.getCryptoSnapshot(symbol).catch(() => null);
+      const broker = createEtoroProviders(this.env);
+      const snapshot = await broker.marketData.getCryptoSnapshot(symbol).catch(() => null);
       const price = snapshot?.latest_trade?.price || 0;
       const dailyChange = snapshot
         ? ((snapshot.daily_bar.c - snapshot.prev_daily_bar.c) / snapshot.prev_daily_bar.c) * 100
@@ -1884,7 +1906,7 @@ JSON response:
   }
 
   private async executeCryptoBuy(
-    alpaca: ReturnType<typeof createAlpacaProviders>,
+    broker: ReturnType<typeof createEtoroProviders>,
     symbol: string,
     confidence: number,
     account: Account
@@ -1901,7 +1923,7 @@ JSON response:
     }
 
     try {
-      const order = await alpaca.trading.createOrder({
+      const order = await broker.trading.createOrder({
         symbol,
         notional: Math.round(positionSize * 100) / 100,
         side: "buy",
@@ -2199,16 +2221,16 @@ JSON response:
     }
 
     try {
-      const alpaca = createAlpacaProviders(this.env);
+      const broker = createEtoroProviders(this.env);
       const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
       let price = 0;
       if (isCrypto) {
         const normalized = normalizeCryptoSymbol(symbol);
-        const snapshot = await alpaca.marketData.getCryptoSnapshot(normalized).catch(() => null);
+        const snapshot = await broker.marketData.getCryptoSnapshot(normalized).catch(() => null);
         price =
           snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
       } else {
-        const snapshot = await alpaca.marketData.getSnapshot(symbol).catch(() => null);
+        const snapshot = await broker.marketData.getSnapshot(symbol).catch(() => null);
         price =
           snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
       }
@@ -2303,8 +2325,8 @@ JSON response:
   }
 
   private async researchTopSignals(limit = 5): Promise<ResearchResult[]> {
-    const alpaca = createAlpacaProviders(this.env);
-    const positions = await alpaca.trading.getPositions();
+    const broker = createEtoroProviders(this.env);
+    const positions = await broker.trading.getPositions();
     const heldSymbols = new Set(positions.map((p) => p.symbol));
 
     const allSignals = this.state.signalCache;
@@ -2579,12 +2601,12 @@ Response format:
   // ============================================================================
 
   private async runAnalyst(): Promise<void> {
-    const alpaca = createAlpacaProviders(this.env);
+    const broker = createEtoroProviders(this.env);
 
     const [account, positions, clock] = await Promise.all([
-      alpaca.trading.getAccount(),
-      alpaca.trading.getPositions(),
-      alpaca.trading.getClock(),
+      broker.trading.getAccount(),
+      broker.trading.getPositions(),
+      broker.trading.getClock(),
     ]);
 
     if (!account || !clock.is_open) {
@@ -2602,13 +2624,13 @@ Response format:
 
       // Take profit
       if (plPct >= this.state.config.take_profit_pct) {
-        await this.executeSell(alpaca, pos.symbol, `Take profit at +${plPct.toFixed(1)}%`);
+        await this.executeSell(broker, pos.symbol, `Take profit at +${plPct.toFixed(1)}%`);
         continue;
       }
 
       // Stop loss
       if (plPct <= -this.state.config.stop_loss_pct) {
-        await this.executeSell(alpaca, pos.symbol, `Stop loss at ${plPct.toFixed(1)}%`);
+        await this.executeSell(broker, pos.symbol, `Stop loss at ${plPct.toFixed(1)}%`);
         continue;
       }
 
@@ -2618,7 +2640,7 @@ Response format:
         this.state.stalenessAnalysis[pos.symbol] = stalenessResult;
 
         if (stalenessResult.isStale) {
-          await this.executeSell(alpaca, pos.symbol, `STALE: ${stalenessResult.reason}`);
+          await this.executeSell(broker, pos.symbol, `STALE: ${stalenessResult.reason}`);
         }
       }
     }
@@ -2663,7 +2685,7 @@ Response format:
           }
         }
 
-        const result = await this.executeBuy(alpaca, research.symbol, finalConfidence, account);
+        const result = await this.executeBuy(broker, research.symbol, finalConfidence, account);
         if (result) {
           heldSymbols.add(research.symbol);
           this.state.positionEntries[research.symbol] = {
@@ -2701,7 +2723,7 @@ Response format:
             continue;
           }
 
-          const result = await this.executeSell(alpaca, rec.symbol, `LLM recommendation: ${rec.reasoning}`);
+          const result = await this.executeSell(broker, rec.symbol, `LLM recommendation: ${rec.reasoning}`);
           if (result) {
             heldSymbols.delete(rec.symbol);
             this.log("Analyst", "llm_sell_executed", {
@@ -2718,7 +2740,7 @@ Response format:
           if (heldSymbols.has(rec.symbol)) continue;
           if (researchedSymbols.has(rec.symbol)) continue;
 
-          const result = await this.executeBuy(alpaca, rec.symbol, rec.confidence, account);
+          const result = await this.executeBuy(broker, rec.symbol, rec.confidence, account);
           if (result) {
             const originalSignal = this.state.signalCache.find((s) => s.symbol === rec.symbol);
             heldSymbols.add(rec.symbol);
@@ -2740,7 +2762,7 @@ Response format:
   }
 
   private async executeBuy(
-    alpaca: ReturnType<typeof createAlpacaProviders>,
+    broker: ReturnType<typeof createEtoroProviders>,
     symbol: string,
     confidence: number,
     account: Account
@@ -2784,10 +2806,11 @@ Response format:
       const orderSymbol = isCrypto ? normalizeCryptoSymbol(symbol) : symbol;
       const timeInForce = isCrypto ? "gtc" : "day";
 
-      if (!isCrypto) {
+      const enforceExchangeAllowlist = !this.env.ETORO_API_KEY && !this.env.ETORO_USER_KEY;
+      if (!isCrypto && enforceExchangeAllowlist) {
         const allowedExchanges = this.state.config.allowed_exchanges ?? ["NYSE", "NASDAQ", "ARCA", "AMEX", "BATS"];
         if (allowedExchanges.length > 0) {
-          const asset = await alpaca.trading.getAsset(symbol);
+          const asset = await broker.trading.getAsset(symbol);
           if (!asset) {
             this.log("Executor", "buy_blocked", { symbol, reason: "Asset not found" });
             return false;
@@ -2804,7 +2827,7 @@ Response format:
         }
       }
 
-      const order = await alpaca.trading.createOrder({
+      const order = await broker.trading.createOrder({
         symbol: orderSymbol,
         notional: Math.round(positionSize * 100) / 100,
         side: "buy",
@@ -2821,7 +2844,7 @@ Response format:
   }
 
   private async executeSell(
-    alpaca: ReturnType<typeof createAlpacaProviders>,
+    broker: ReturnType<typeof createEtoroProviders>,
     symbol: string,
     reason: string
   ): Promise<boolean> {
@@ -2836,7 +2859,7 @@ Response format:
     }
 
     try {
-      await alpaca.trading.closePosition(symbol);
+      await broker.trading.closePosition(symbol);
       this.log("Executor", "sell_executed", { symbol, reason });
 
       delete this.state.positionEntries[symbol];
@@ -2937,6 +2960,9 @@ Response format:
   // ============================================================================
 
   private isOptionsEnabled(): boolean {
+    if (this.env.ETORO_API_KEY || this.env.ETORO_USER_KEY) {
+      return false;
+    }
     return this.state.config.options_enabled === true;
   }
 
@@ -2955,8 +2981,8 @@ Response format:
     if (!this.isOptionsEnabled()) return null;
 
     try {
-      const alpaca = createAlpacaProviders(this.env);
-      const expirations = await alpaca.options.getExpirations(symbol);
+      const broker = createEtoroProviders(this.env);
+      const expirations = await broker.options.getExpirations(symbol);
 
       if (!expirations || expirations.length === 0) {
         this.log("Options", "no_expirations", { symbol });
@@ -2983,7 +3009,7 @@ Response format:
         return Math.abs(dte - targetDTE) < Math.abs(currentBestDte - targetDTE) ? exp : best;
       }, validExpirations[0]!);
 
-      const chain = await alpaca.options.getChain(symbol, bestExpiration);
+      const chain = await broker.options.getChain(symbol, bestExpiration);
       if (!chain) {
         this.log("Options", "chain_failed", { symbol, expiration: bestExpiration });
         return null;
@@ -2995,7 +3021,7 @@ Response format:
         return null;
       }
 
-      const snapshot = await alpaca.marketData.getSnapshot(symbol).catch(() => null);
+      const snapshot = await broker.marketData.getSnapshot(symbol).catch(() => null);
       const stockPrice =
         snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
       if (stockPrice === 0) return null;
@@ -3010,7 +3036,7 @@ Response format:
         .sort((a, b) => Math.abs(a.strike - targetStrike) - Math.abs(b.strike - targetStrike));
 
       for (const contract of sortedContracts.slice(0, 5)) {
-        const snapshot = await alpaca.options.getSnapshot(contract.symbol);
+        const snapshot = await broker.options.getSnapshot(contract.symbol);
         if (!snapshot) continue;
 
         const delta = snapshot.greeks?.delta;
@@ -3082,8 +3108,8 @@ Response format:
     }
 
     try {
-      const alpaca = createAlpacaProviders(this.env);
-      const order = await alpaca.trading.createOrder({
+      const broker = createEtoroProviders(this.env);
+      const order = await broker.trading.createOrder({
         symbol: contract.symbol,
         qty: quantity,
         side: "buy",
@@ -3185,8 +3211,8 @@ Response format:
   }
 
   private async runPreMarketAnalysis(): Promise<void> {
-    const alpaca = createAlpacaProviders(this.env);
-    const [account, positions] = await Promise.all([alpaca.trading.getAccount(), alpaca.trading.getPositions()]);
+    const broker = createEtoroProviders(this.env);
+    const [account, positions] = await Promise.all([broker.trading.getAccount(), broker.trading.getPositions()]);
 
     if (!account || this.state.signalCache.length === 0) return;
 
@@ -3230,8 +3256,8 @@ Response format:
       return;
     }
 
-    const alpaca = createAlpacaProviders(this.env);
-    const [account, positions] = await Promise.all([alpaca.trading.getAccount(), alpaca.trading.getPositions()]);
+    const broker = createEtoroProviders(this.env);
+    const [account, positions] = await Promise.all([broker.trading.getAccount(), broker.trading.getPositions()]);
 
     if (!account) return;
 
@@ -3243,7 +3269,7 @@ Response format:
 
     for (const rec of this.state.premarketPlan.recommendations) {
       if (rec.action === "SELL" && rec.confidence >= this.state.config.min_analyst_confidence) {
-        await this.executeSell(alpaca, rec.symbol, `Pre-market plan: ${rec.reasoning}`);
+        await this.executeSell(broker, rec.symbol, `Pre-market plan: ${rec.reasoning}`);
       }
     }
 
@@ -3252,7 +3278,7 @@ Response format:
         if (heldSymbols.has(rec.symbol)) continue;
         if (positions.length >= this.state.config.max_positions) break;
 
-        const result = await this.executeBuy(alpaca, rec.symbol, rec.confidence, account);
+        const result = await this.executeBuy(broker, rec.symbol, rec.confidence, account);
         if (result) {
           heldSymbols.add(rec.symbol);
 
@@ -3380,7 +3406,7 @@ Response format:
           ],
           description: "High sentiment detected, researching...",
           timestamp: new Date().toISOString(),
-          footer: { text: "MAHORAGA • Not financial advice • DYOR" },
+          footer: { text: "MAKORA • Not financial advice • DYOR" },
         };
       } else {
         const verdictEmoji = data.verdict === "BUY" ? "✅" : data.verdict === "SKIP" ? "⏭️" : "⏸️";
@@ -3395,7 +3421,7 @@ Response format:
             { name: "Sentiment", value: `${((data.sentiment || 0) * 100).toFixed(0)}%`, inline: true },
           ],
           timestamp: new Date().toISOString(),
-          footer: { text: "MAHORAGA • Not financial advice • DYOR" },
+          footer: { text: "MAKORA • Not financial advice • DYOR" },
         };
 
         if (data.reasoning) {
@@ -3432,11 +3458,11 @@ Response format:
 // ============================================================================
 
 export function getHarnessStub(env: Env): DurableObjectStub {
-  if (!env.MAHORAGA_HARNESS) {
-    throw new Error("MAHORAGA_HARNESS binding not configured - check wrangler.toml");
+  if (!env.MAKORA_HARNESS) {
+    throw new Error("MAKORA_HARNESS binding not configured - check wrangler.toml");
   }
-  const id = env.MAHORAGA_HARNESS.idFromName("main");
-  return env.MAHORAGA_HARNESS.get(id);
+  const id = env.MAKORA_HARNESS.idFromName("main");
+  return env.MAKORA_HARNESS.get(id);
 }
 
 export async function getHarnessStatus(env: Env): Promise<unknown> {

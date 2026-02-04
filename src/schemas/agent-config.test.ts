@@ -51,7 +51,7 @@ describe("AgentConfigSchema", () => {
     });
 
     it("accepts all llm_provider values", () => {
-      const providers = ["openai-raw", "ai-sdk", "cloudflare-gateway"] as const;
+      const providers = ["openai-raw", "ai-sdk", "cloudflare-gateway", "azure-openai"] as const;
       for (const provider of providers) {
         const config = { ...createValidConfig(), llm_provider: provider };
         const result = AgentConfigSchema.safeParse(config);
