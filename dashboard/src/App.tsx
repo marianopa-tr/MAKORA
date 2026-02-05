@@ -43,6 +43,13 @@ function formatPercent(value: number): string {
   return `${sign}${value.toFixed(2)}%`
 }
 
+function getPositionKey(pos: Position): string {
+  if (pos.position_id) return pos.position_id
+  const base = pos.asset_id ?? pos.symbol
+  const entry = pos.avg_entry_price ?? pos.current_price
+  return `${base}-${entry}-${pos.qty}`
+}
+
 function getAgentColor(agent: string): string {
   const colors: Record<string, string> = {
     'Analyst': 'text-hud-purple',
@@ -440,7 +447,7 @@ export default function App() {
                         
                         return (
                           <motion.tr 
-                            key={pos.symbol}
+                            key={getPositionKey(pos)}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             className="border-b border-hud-line/20 hover:bg-hud-line/10"
@@ -575,7 +582,7 @@ export default function App() {
                         {topPositionsByValue.map((pos) => {
                           const plPct = (pos.unrealized_pl / (pos.market_value || 1)) * 100
                           return (
-                            <div key={pos.symbol} className="flex justify-between items-center text-xs">
+                            <div key={getPositionKey(pos)} className="flex justify-between items-center text-xs">
                               <span className="hud-value-sm">{pos.symbol}</span>
                               <span className="hud-value-sm">{formatCurrency(pos.market_value)}</span>
                               <span className={clsx('hud-value-sm', pos.unrealized_pl >= 0 ? 'text-hud-success' : 'text-hud-error')}>
@@ -607,7 +614,7 @@ export default function App() {
                       const plPct = (pos.unrealized_pl / (pos.market_value - pos.unrealized_pl)) * 100
                       const color = positionColors[idx % positionColors.length]
                       return (
-                        <div key={pos.symbol} className="flex items-center gap-1.5">
+                        <div key={getPositionKey(pos)} className="flex items-center gap-1.5">
                           <div 
                             className="w-2 h-2 rounded-full" 
                             style={{ backgroundColor: `var(--color-hud-${color})` }}

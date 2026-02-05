@@ -43,8 +43,34 @@ const TIMEFRAME_TO_INTERVAL: Record<string, string> = {
   "1Day": "OneDay",
 };
 
+const RATES_CACHE_TTL_MS = 15_000;
+
 export class EtoroMarketDataProvider implements MarketDataProvider {
+  private ratesCache: { data: EtoroRatesResponse; expiresAt: number } | null = null;
+  private ratesPending: Promise<EtoroRatesResponse> | null = null;
+
   constructor(private client: EtoroClient, private instruments: EtoroInstrumentCache) {}
+
+  /** Fetch ALL rates (no filter) with cache + inflight dedup. One call for everything. */
+  private getAllRates(): Promise<EtoroRatesResponse> {
+    const now = Date.now();
+    if (this.ratesCache && now < this.ratesCache.expiresAt) {
+      return Promise.resolve(this.ratesCache.data);
+    }
+    if (this.ratesPending) return this.ratesPending;
+    this.ratesPending = this.client
+      .marketDataRequest<EtoroRatesResponse>("GET", "/market-data/instruments/rates")
+      .then((data) => {
+        this.ratesCache = { data, expiresAt: Date.now() + RATES_CACHE_TTL_MS };
+        this.ratesPending = null;
+        return data;
+      })
+      .catch((err) => {
+        this.ratesPending = null;
+        throw err;
+      });
+    return this.ratesPending;
+  }
 
   async getBars(symbol: string, timeframe: string, params?: BarsParams): Promise<Bar[]> {
     const instrumentId = await this.instruments.resolveInstrumentId(symbol);
@@ -93,20 +119,28 @@ export class EtoroMarketDataProvider implements MarketDataProvider {
 
   async getQuotes(symbols: string[]): Promise<Record<string, Quote>> {
     if (symbols.length === 0) return {};
-    const instrumentIds = await Promise.all(symbols.map((symbol) => this.instruments.resolveInstrumentId(symbol)));
-    const response = await this.client.marketDataRequest<EtoroRatesResponse>(
-      "GET",
-      "/market-data/instruments/rates",
-      { instrumentIds }
-    );
 
-    const meta = await this.instruments.resolveMetadata(instrumentIds);
+    // Batch-resolve all symbols → instrument IDs in parallel (cached after first resolve)
+    const idMap = await this.instruments.resolveInstrumentIds(symbols);
+    if (idMap.size === 0) return {};
+
+    // One unfiltered /rates call (cached 15s) — no ID filter, no bad-ID failures
+    const response = await this.getAllRates();
+
+    // Build reverse map: instrumentId → input symbol
+    const idToInputSymbol = new Map<number, string>();
+    for (const [sym, id] of idMap) {
+      idToInputSymbol.set(id, sym);
+    }
+
     const result: Record<string, Quote> = {};
 
     for (const rate of response.rates ?? []) {
       const instrumentId = rate.instrumentId ?? rate.instrumentID;
       if (typeof instrumentId !== "number") continue;
-      const symbol = meta.get(instrumentId)?.symbol ?? String(instrumentId);
+      // Only include rates for instruments we asked about
+      if (!idToInputSymbol.has(instrumentId)) continue;
+      const symbol = idToInputSymbol.get(instrumentId)!;
       result[symbol] = {
         symbol,
         bid_price: rate.bid ?? 0,
@@ -141,8 +175,17 @@ export class EtoroMarketDataProvider implements MarketDataProvider {
     };
   }
 
+  /**
+   * Batch snapshots: one getQuotes call for all symbols (1 API call),
+   * then fills in bar data from cache where available.
+   */
   async getSnapshots(symbols: string[]): Promise<Record<string, Snapshot>> {
     if (symbols.length === 0) return {};
+
+    // Pre-resolve all symbols in one parallel batch
+    await this.instruments.resolveInstrumentIds(symbols);
+
+    // Single batched rates call
     const quotes = await this.getQuotes(symbols);
 
     const result: Record<string, Snapshot> = {};

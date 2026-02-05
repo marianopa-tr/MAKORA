@@ -107,19 +107,26 @@ interface EtoroOrderDetailsResponse {
   lastUpdate?: string;
 }
 
-interface EtoroInstrumentDisplay {
-  instrumentId?: number;
-  instrumentID?: number;
-  instrumentDisplayName?: string;
-  exchangeId?: number;
-  symbolFull?: string;
+/**
+ * Short-lived cache entry for portfolio and rate data.
+ * Prevents duplicate API calls within the same poll cycle.
+ */
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
 }
 
-interface EtoroInstrumentMetadataResponse {
-  instrumentDisplayDatas?: EtoroInstrumentDisplay[];
-}
+const PORTFOLIO_CACHE_TTL_MS = 15_000; // 15 seconds
+const RATES_CACHE_TTL_MS = 15_000; // 15 seconds
 
 export class EtoroTradingProvider implements BrokerProvider {
+  private portfolioCache: CacheEntry<EtoroPortfolioResponse> | null = null;
+  private ratesCache: CacheEntry<Map<number, EtoroRate>> | null = null;
+
+  /** In-flight promise dedup: concurrent callers share the same pending request. */
+  private portfolioPending: Promise<EtoroPortfolioResponse> | null = null;
+  private ratesPending: Promise<Map<number, EtoroRate>> | null = null;
+
   constructor(private client: EtoroClient, private instruments: EtoroInstrumentCache) {}
 
   async getAccount(): Promise<Account> {
@@ -129,15 +136,14 @@ export class EtoroTradingProvider implements BrokerProvider {
     let longMarketValue = 0;
 
     try {
-      const response = await this.client.tradingRequest<EtoroPortfolioResponse>(
-        "GET",
-        `/trading/info/${env}/portfolio`
-      );
+      const response = await this.getCachedPortfolio();
       credit = response.clientPortfolio?.credit ?? 0;
       const rawPositions = this.collectPositions(response);
-      const instrumentIds = rawPositions
-        .map((pos) => this.getInstrumentId(pos))
-        .filter((id): id is number => typeof id === "number");
+      const instrumentIds = [...new Set(
+        rawPositions
+          .map((pos) => this.getInstrumentId(pos))
+          .filter((id): id is number => typeof id === "number")
+      )];
 
       let meta = new Map<number, { symbol: string; instrumentTypeId?: number; exchangeId?: number }>();
       try {
@@ -148,7 +154,7 @@ export class EtoroTradingProvider implements BrokerProvider {
 
       let rates = new Map<number, EtoroRate>();
       try {
-        rates = await this.fetchRates(instrumentIds);
+        rates = await this.getCachedRates(instrumentIds);
       } catch {
         rates = new Map();
       }
@@ -201,15 +207,13 @@ export class EtoroTradingProvider implements BrokerProvider {
   }
 
   async getPositions(): Promise<Position[]> {
-    const env = this.client.getEnvironment();
-    const response = await this.client.tradingRequest<EtoroPortfolioResponse>(
-      "GET",
-      `/trading/info/${env}/portfolio`
-    );
-    const rawPositions = response.clientPortfolio?.positions ?? [];
-    const instrumentIds = rawPositions
-      .map((pos) => this.getInstrumentId(pos))
-      .filter((id): id is number => typeof id === "number");
+    const response = await this.getCachedPortfolio();
+    const rawPositions = this.dedupePositions(response.clientPortfolio?.positions ?? []);
+    const instrumentIds = [...new Set(
+      rawPositions
+        .map((pos) => this.getInstrumentId(pos))
+        .filter((id): id is number => typeof id === "number")
+    )];
 
     let meta = new Map<number, { symbol: string; instrumentTypeId?: number; exchangeId?: number }>();
     try {
@@ -220,7 +224,7 @@ export class EtoroTradingProvider implements BrokerProvider {
 
     let rates = new Map<number, EtoroRate>();
     try {
-      rates = await this.fetchRates(instrumentIds);
+      rates = await this.getCachedRates(instrumentIds);
     } catch {
       rates = new Map();
     }
@@ -241,10 +245,7 @@ export class EtoroTradingProvider implements BrokerProvider {
 
   async closePosition(symbol: string, qty?: number, percentage?: number): Promise<Order> {
     const env = this.client.getEnvironment();
-    const response = await this.client.tradingRequest<EtoroPortfolioResponse>(
-      "GET",
-      `/trading/info/${env}/portfolio`
-    );
+    const response = await this.getCachedPortfolio();
     const rawPositions = response.clientPortfolio?.positions ?? [];
     const instrumentIds = rawPositions
       .map((pos) => this.getInstrumentId(pos))
@@ -257,27 +258,33 @@ export class EtoroTradingProvider implements BrokerProvider {
       meta = new Map();
     }
 
-    let targetInstrumentId: number | null = null;
-    try {
-      targetInstrumentId = await this.instruments.resolveInstrumentId(symbol);
-    } catch {
-      targetInstrumentId = null;
-    }
-
-    const position = rawPositions.find((pos) => {
+    const parsedPositions = rawPositions.map((pos) => {
       const instrumentId = this.getInstrumentId(pos);
-      if (targetInstrumentId && instrumentId === targetInstrumentId) {
-        return true;
-      }
-      const metaSymbol = instrumentId ? meta.get(instrumentId)?.symbol ?? String(instrumentId) : "UNKNOWN";
-      return metaSymbol.toUpperCase() === symbol.toUpperCase();
+      const metaEntry = instrumentId ? meta.get(instrumentId) : undefined;
+      return this.parsePosition(pos, metaEntry);
     });
+
+    let position = parsedPositions.find(
+      (pos) => this.symbolMatches(pos.symbol, symbol) || this.symbolMatches(pos.asset_id, symbol)
+    );
+    if (!position) {
+      try {
+        const targetInstrumentId = await this.instruments.resolveInstrumentId(symbol);
+        const fallback = rawPositions.find((pos) => this.getInstrumentId(pos) === targetInstrumentId);
+        if (fallback) {
+          const metaEntry = targetInstrumentId ? meta.get(targetInstrumentId) : undefined;
+          position = this.parsePosition(fallback, metaEntry);
+        }
+      } catch {
+        position = undefined;
+      }
+    }
 
     if (!position) {
       throw createError(ErrorCode.NOT_FOUND, `No open position for ${symbol}`);
     }
 
-    const totalUnits = position.units ?? 0;
+    const totalUnits = position.qty ?? 0;
     let unitsToDeduct: number | null = null;
     if (qty !== undefined) {
       unitsToDeduct = Math.min(qty, totalUnits);
@@ -285,9 +292,16 @@ export class EtoroTradingProvider implements BrokerProvider {
       unitsToDeduct = Math.max(Math.min((percentage / 100) * totalUnits, totalUnits), 0);
     }
 
-    const positionId = this.getPositionId(position);
+    const positionId = position.position_id;
     if (!positionId) {
       throw createError(ErrorCode.NOT_FOUND, `No position ID found for ${symbol}`);
+    }
+
+    const instrumentId = Number(position.asset_id);
+    const safeInstrumentId = Number.isFinite(instrumentId) ? instrumentId : 0;
+
+    if (!safeInstrumentId) {
+      throw createError(ErrorCode.INVALID_INPUT, `No instrument ID found for position ${positionId} (${symbol})`);
     }
 
     const closeResponse = await this.client.tradingRequest<Record<string, unknown>>(
@@ -295,14 +309,13 @@ export class EtoroTradingProvider implements BrokerProvider {
       `/trading/execution/${env}/market-close-orders/positions/${positionId}`,
       {
         body: {
+          InstrumentId: safeInstrumentId,
           UnitsToDeduct: unitsToDeduct ?? null,
         },
       }
     );
-
-    const instrumentId = this.getInstrumentId(position) ?? 0;
-    const side = position.isBuy === false ? "buy" : "sell";
-    return this.mapGenericOrder(symbol, instrumentId, side, closeResponse);
+    const side = position.side === "short" ? "buy" : "sell";
+    return this.mapGenericOrder(symbol, safeInstrumentId, side, closeResponse);
   }
 
   async createOrder(params: OrderParams): Promise<Order> {
@@ -461,19 +474,17 @@ export class EtoroTradingProvider implements BrokerProvider {
   async getAsset(symbol: string): Promise<Asset | null> {
     try {
       const instrumentId = await this.instruments.resolveInstrumentId(symbol);
-      const meta = await this.client.marketDataRequest<EtoroInstrumentMetadataResponse>(
-        "GET",
-        "/market-data/instruments",
-        { instrumentIds: [instrumentId] }
-      );
-      const display = meta.instrumentDisplayDatas?.[0];
+      // Use shared metadata cache — resolveMetadata batches and caches, avoiding
+      // individual /market-data/instruments calls per symbol.
+      const meta = await this.instruments.resolveMetadata([instrumentId]);
+      const display = meta.get(instrumentId);
 
       return {
-        id: String(display?.instrumentId ?? display?.instrumentID ?? instrumentId),
-        class: this.mapAssetClass(display?.symbolFull ?? symbol),
+        id: String(instrumentId),
+        class: this.mapAssetClass(display?.symbol ?? symbol),
         exchange: String(display?.exchangeId ?? "ETORO"),
-        symbol: (display?.symbolFull ?? symbol).toUpperCase(),
-        name: display?.instrumentDisplayName ?? symbol.toUpperCase(),
+        symbol: (display?.symbol ?? symbol).toUpperCase(),
+        name: display?.symbol ?? symbol.toUpperCase(),
         status: "active",
         tradable: true,
         marginable: false,
@@ -486,6 +497,32 @@ export class EtoroTradingProvider implements BrokerProvider {
       }
       throw error;
     }
+  }
+
+  /**
+   * Pre-resolve multiple symbols in parallel and batch-fetch their metadata.
+   * Call this before individual getAsset/getSnapshot calls to warm the cache.
+   * Returns a map of symbol → Asset for all valid symbols found.
+   */
+  async preResolveSymbols(symbols: string[]): Promise<Map<string, Asset>> {
+    const idMap = await this.instruments.resolveInstrumentIds(symbols);
+    const result = new Map<string, Asset>();
+    for (const [symbol, instrumentId] of idMap) {
+      const meta = this.instruments.getCachedMeta(instrumentId);
+      result.set(symbol, {
+        id: String(instrumentId),
+        class: this.mapAssetClass(meta?.symbol ?? symbol),
+        exchange: String(meta?.exchangeId ?? "ETORO"),
+        symbol: (meta?.symbol ?? symbol).toUpperCase(),
+        name: meta?.symbol ?? symbol.toUpperCase(),
+        status: "active",
+        tradable: true,
+        marginable: false,
+        shortable: false,
+        fractionable: true,
+      });
+    }
+    return result;
   }
 
   async getPortfolioHistory(_params?: PortfolioHistoryParams): Promise<PortfolioHistory> {
@@ -507,12 +544,8 @@ export class EtoroTradingProvider implements BrokerProvider {
       throw createError(ErrorCode.INVALID_INPUT, "Order must include qty or notional");
     }
 
-    const rates = await this.client.marketDataRequest<EtoroRatesResponse>(
-      "GET",
-      "/market-data/instruments/rates",
-      { instrumentIds: [instrumentId] }
-    );
-    const rate = rates.rates?.[0];
+    const rateMap = await this.getCachedRates();
+    const rate = rateMap.get(instrumentId);
     const price = params.side === "buy" ? rate?.ask ?? rate?.lastExecution : rate?.bid ?? rate?.lastExecution;
     if (!price || price <= 0) {
       throw createError(ErrorCode.PROVIDER_ERROR, "Unable to compute units for order (missing price)");
@@ -527,6 +560,7 @@ export class EtoroTradingProvider implements BrokerProvider {
     rate?: EtoroRate
   ): Position {
     const instrumentId = this.getInstrumentId(position);
+    const positionId = this.getPositionId(position);
     const symbol = meta?.symbol ?? (instrumentId ? String(instrumentId) : "UNKNOWN");
     const qty = position.units ?? 0;
     const openRate = position.openRate ?? 0;
@@ -541,6 +575,7 @@ export class EtoroTradingProvider implements BrokerProvider {
     const pnl = rawPnL ?? computedPnL;
 
     return {
+      position_id: positionId ? String(positionId) : undefined,
       asset_id: String(instrumentId ?? ""),
       symbol,
       exchange: String(meta?.exchangeId ?? "ETORO"),
@@ -560,6 +595,25 @@ export class EtoroTradingProvider implements BrokerProvider {
     };
   }
 
+  private normalizeSymbol(value: string): string {
+    const normalized = value.trim().toUpperCase();
+    if (normalized.endsWith("/USD")) {
+      return normalized.slice(0, -4);
+    }
+    if (normalized.endsWith("USD") && normalized.length > 3) {
+      return normalized.slice(0, -3);
+    }
+    return normalized;
+  }
+
+  private symbolMatches(a?: string, b?: string): boolean {
+    if (!a || !b) return false;
+    const upperA = a.trim().toUpperCase();
+    const upperB = b.trim().toUpperCase();
+    if (upperA === upperB) return true;
+    return this.normalizeSymbol(upperA) === this.normalizeSymbol(upperB);
+  }
+
   private getInstrumentId(record: EtoroPortfolioPosition | EtoroPortfolioOrder): number | null {
     return (
       record.instrumentId ??
@@ -573,15 +627,7 @@ export class EtoroTradingProvider implements BrokerProvider {
     return position.positionId ?? position.positionID ?? position.PositionID ?? null;
   }
 
-  private collectPositions(response: EtoroPortfolioResponse): EtoroPortfolioPosition[] {
-    const positions = [...(response.clientPortfolio?.positions ?? [])];
-    const mirrors = response.clientPortfolio?.mirrors ?? [];
-    for (const mirror of mirrors) {
-      if (mirror.positions?.length) {
-        positions.push(...mirror.positions);
-      }
-    }
-
+  private dedupePositions(positions: EtoroPortfolioPosition[]): EtoroPortfolioPosition[] {
     const seen = new Set<number>();
     return positions.filter((pos) => {
       const id = this.getPositionId(pos);
@@ -592,66 +638,87 @@ export class EtoroTradingProvider implements BrokerProvider {
     });
   }
 
-  private async fetchRates(instrumentIds: number[]): Promise<Map<number, EtoroRate>> {
-    if (instrumentIds.length === 0) {
-      return new Map();
+  private collectPositions(response: EtoroPortfolioResponse): EtoroPortfolioPosition[] {
+    const positions = [...(response.clientPortfolio?.positions ?? [])];
+    const mirrors = response.clientPortfolio?.mirrors ?? [];
+    for (const mirror of mirrors) {
+      if (mirror.positions?.length) {
+        positions.push(...mirror.positions);
+      }
     }
+    return this.dedupePositions(positions);
+  }
 
+  /**
+   * Fetch portfolio with short-TTL cache + inflight dedup.
+   * Concurrent callers share the same in-flight request (fixes Promise.all race).
+   */
+  private getCachedPortfolio(): Promise<EtoroPortfolioResponse> {
+    const now = Date.now();
+    if (this.portfolioCache && now < this.portfolioCache.expiresAt) {
+      return Promise.resolve(this.portfolioCache.data);
+    }
+    // If a fetch is already in-flight, piggyback on it
+    if (this.portfolioPending) {
+      return this.portfolioPending;
+    }
+    const env = this.client.getEnvironment();
+    this.portfolioPending = this.client
+      .tradingRequest<EtoroPortfolioResponse>("GET", `/trading/info/${env}/portfolio`)
+      .then((data) => {
+        this.portfolioCache = { data, expiresAt: Date.now() + PORTFOLIO_CACHE_TTL_MS };
+        this.portfolioPending = null;
+        return data;
+      })
+      .catch((err) => {
+        this.portfolioPending = null;
+        throw err;
+      });
+    return this.portfolioPending;
+  }
+
+  /**
+   * Fetch ALL rates (no filter) with short-TTL cache + inflight dedup.
+   * One call returns rates for every instrument eToro knows about.
+   * Callers then look up specific IDs from the cached map.
+   */
+  private getCachedRates(_instrumentIds?: number[]): Promise<Map<number, EtoroRate>> {
+    const now = Date.now();
+    if (this.ratesCache && now < this.ratesCache.expiresAt) {
+      return Promise.resolve(this.ratesCache.data);
+    }
+    if (this.ratesPending) {
+      return this.ratesPending;
+    }
+    this.ratesPending = this.fetchAllRates()
+      .then((rates) => {
+        this.ratesCache = { data: rates, expiresAt: Date.now() + RATES_CACHE_TTL_MS };
+        this.ratesPending = null;
+        return rates;
+      })
+      .catch((err) => {
+        this.ratesPending = null;
+        throw err;
+      });
+    return this.ratesPending;
+  }
+
+  /** Fetch ALL rates without any instrumentIds filter — one call, no bad-ID failures. */
+  private async fetchAllRates(): Promise<Map<number, EtoroRate>> {
     const rateMap = new Map<number, EtoroRate>();
-
-    for (let i = 0; i < instrumentIds.length; i += 100) {
-      const chunk = instrumentIds.slice(i, i + 100);
-      try {
-        const response = await this.client.marketDataRequest<EtoroRatesResponse>(
-          "GET",
-          "/market-data/instruments/rates",
-          { instrumentIds: chunk }
-        );
-
-        for (const rate of response.rates ?? []) {
-          const id = rate.instrumentId ?? rate.instrumentID;
-          if (typeof id === "number") {
-            rateMap.set(id, rate);
-          }
-        }
-
-        const missingIds = chunk.filter((id) => !rateMap.has(id));
-        for (const id of missingIds.slice(0, 25)) {
-          try {
-            const singleResponse = await this.client.marketDataRequest<EtoroRatesResponse>(
-              "GET",
-              "/market-data/instruments/rates",
-              { instrumentIds: [id] }
-            );
-            for (const rate of singleResponse.rates ?? []) {
-              const parsedId = rate.instrumentId ?? rate.instrumentID;
-              if (typeof parsedId === "number") {
-                rateMap.set(parsedId, rate);
-              }
-            }
-          } catch {
-            // ignore single-id failures
-          }
-        }
-      } catch {
-        for (const id of chunk.slice(0, 25)) {
-          try {
-            const singleResponse = await this.client.marketDataRequest<EtoroRatesResponse>(
-              "GET",
-              "/market-data/instruments/rates",
-              { instrumentIds: [id] }
-            );
-            for (const rate of singleResponse.rates ?? []) {
-              const parsedId = rate.instrumentId ?? rate.instrumentID;
-              if (typeof parsedId === "number") {
-                rateMap.set(parsedId, rate);
-              }
-            }
-          } catch {
-            // ignore single-id failures
-          }
+    try {
+      const response = await this.client.marketDataRequest<EtoroRatesResponse>(
+        "GET",
+        "/market-data/instruments/rates"
+      );
+      for (const rate of response.rates ?? []) {
+        const id = rate.instrumentId ?? rate.instrumentID;
+        if (typeof id === "number") {
+          rateMap.set(id, rate);
         }
       }
+    } catch {
+      // Failed — return empty map; no retries
     }
     return rateMap;
   }

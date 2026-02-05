@@ -39,7 +39,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
 import { createEtoroProviders } from "../providers/etoro";
 import { createLLMProvider } from "../providers/llm/factory";
-import type { Account, LLMProvider, MarketClock, Position } from "../providers/types";
+import type { Account, LLMProvider, MarketClock, Position, Snapshot } from "../providers/types";
 
 // ============================================================================
 // SECTION 1: TYPES & CONFIGURATION
@@ -660,6 +660,38 @@ class ValidTickerCache {
     } catch {
       this.brokerCache.set(upper, false);
       return false;
+    }
+  }
+
+  /**
+   * Batch-validate multiple symbols in one go.
+   * Uses preResolveSymbols to batch-resolve all IDs and metadata in parallel,
+   * then caches the results so subsequent individual validateWithBroker calls
+   * hit cache.
+   */
+  async validateSymbolsBatch(
+    symbols: string[],
+    broker: { trading: { preResolveSymbols(s: string[]): Promise<Map<string, { tradable: boolean }>> } }
+  ): Promise<void> {
+    const uncached = symbols
+      .map((s) => s.toUpperCase())
+      .filter((s) => this.brokerCache.get(s) === undefined);
+
+    if (uncached.length === 0) return;
+
+    try {
+      const assets = await broker.trading.preResolveSymbols(uncached);
+      for (const symbol of uncached) {
+        const asset = assets.get(symbol);
+        this.brokerCache.set(symbol, asset !== undefined && asset.tradable);
+      }
+    } catch {
+      // On failure, mark all as invalid so we don't retry immediately
+      for (const symbol of uncached) {
+        if (this.brokerCache.get(symbol) === undefined) {
+          this.brokerCache.set(symbol, false);
+        }
+      }
     }
   }
 }
@@ -1487,17 +1519,22 @@ export class MakoraHarness extends DurableObject<Env> {
     const signals: Signal[] = [];
     const broker = createEtoroProviders(this.env);
 
+    // Pre-resolve all candidate symbols in one batch (parallel search + single metadata call)
+    const candidateSymbols = [...tickerData.entries()]
+      .filter(([, data]) => data.mentions >= 2)
+      .map(([symbol]) => symbol)
+      .filter((symbol) => !tickerCache.isKnownSecTicker(symbol) && tickerCache.getCachedValidation(symbol) === undefined);
+    if (candidateSymbols.length > 0) {
+      await tickerCache.validateSymbolsBatch(candidateSymbols, broker);
+    }
+
     for (const [symbol, data] of tickerData) {
       if (data.mentions >= 2) {
         if (!tickerCache.isKnownSecTicker(symbol)) {
           const cached = tickerCache.getCachedValidation(symbol);
-          if (cached === false) continue;
-          if (cached === undefined) {
-            const isValid = await tickerCache.validateWithBroker(symbol, broker);
-            if (!isValid) {
-              this.log("Reddit", "invalid_ticker_filtered", { symbol });
-              continue;
-            }
+          if (cached === false) {
+            this.log("Reddit", "invalid_ticker_filtered", { symbol });
+            continue;
           }
         }
 
@@ -1536,9 +1573,18 @@ export class MakoraHarness extends DurableObject<Env> {
     const symbols = this.state.config.crypto_symbols || ["BTC/USD", "ETH/USD", "SOL/USD"];
     const broker = createEtoroProviders(this.env);
 
+    // Batch: one getSnapshots call for all crypto symbols (parallel resolve + single rates call)
+    let snapshots: Record<string, Snapshot> = {};
+    try {
+      snapshots = await broker.marketData.getSnapshots(symbols);
+    } catch (error) {
+      this.log("Crypto", "batch_error", { message: String(error) });
+      return [];
+    }
+
     for (const symbol of symbols) {
       try {
-        const snapshot = await broker.marketData.getCryptoSnapshot(symbol);
+        const snapshot = snapshots[symbol] ?? snapshots[symbol.toUpperCase()];
         if (!snapshot) continue;
 
         const price = snapshot.latest_trade?.price || 0;
@@ -1570,8 +1616,6 @@ export class MakoraHarness extends DurableObject<Env> {
           price,
           timestamp: Date.now(),
         });
-
-        await this.sleep(200);
       } catch (error) {
         this.log("Crypto", "error", { symbol, message: String(error) });
       }
@@ -1605,16 +1649,23 @@ export class MakoraHarness extends DurableObject<Env> {
 
       const broker = createEtoroProviders(this.env);
 
+      // Pre-resolve all tickers in one batch
+      const tickers: string[] = [];
+      for (const entry of entries.slice(0, 15)) {
+        const ticker = await this.resolveTickerFromCompanyName(entry.company);
+        if (ticker) tickers.push(ticker);
+      }
+      const uncachedTickers = tickers.filter((t) => tickerCache.getCachedValidation(t) === undefined);
+      if (uncachedTickers.length > 0) {
+        await tickerCache.validateSymbolsBatch(uncachedTickers, broker);
+      }
+
       for (const entry of entries.slice(0, 15)) {
         const ticker = await this.resolveTickerFromCompanyName(entry.company);
         if (!ticker) continue;
 
         const cached = tickerCache.getCachedValidation(ticker);
-        if (cached === false) continue;
-        if (cached === undefined) {
-          const isValid = await tickerCache.validateWithBroker(ticker, broker);
-          if (!isValid) continue;
-        }
+        if (!cached) continue;
 
         const sourceWeight = entry.form === "8-K" ? SOURCE_CONFIG.weights.sec_8k : SOURCE_CONFIG.weights.sec_4;
         const freshness = this.calculateSECFreshness(entry.updated);
@@ -2207,7 +2258,8 @@ JSON response:
   private async researchSignal(
     symbol: string,
     sentimentScore: number,
-    sources: string[]
+    sources: string[],
+    prefetchedSnapshot?: Snapshot
   ): Promise<ResearchResult | null> {
     if (!this._llm) {
       this.log("SignalResearch", "skipped_no_llm", { symbol, reason: "LLM Provider not configured" });
@@ -2221,19 +2273,22 @@ JSON response:
     }
 
     try {
-      const broker = createEtoroProviders(this.env);
-      const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
       let price = 0;
-      if (isCrypto) {
-        const normalized = normalizeCryptoSymbol(symbol);
-        const snapshot = await broker.marketData.getCryptoSnapshot(normalized).catch(() => null);
-        price =
-          snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+      if (prefetchedSnapshot) {
+        price = prefetchedSnapshot.latest_trade?.price || prefetchedSnapshot.latest_quote?.ask_price || prefetchedSnapshot.latest_quote?.bid_price || 0;
       } else {
-        const snapshot = await broker.marketData.getSnapshot(symbol).catch(() => null);
-        price =
-          snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+        const broker = createEtoroProviders(this.env);
+        const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
+        if (isCrypto) {
+          const normalized = normalizeCryptoSymbol(symbol);
+          const snapshot = await broker.marketData.getCryptoSnapshot(normalized).catch(() => null);
+          price = snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+        } else {
+          const snapshot = await broker.marketData.getSnapshot(symbol).catch(() => null);
+          price = snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+        }
       }
+      const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
 
       const prompt = `Should we BUY this ${isCrypto ? "crypto" : "stock"} based on social sentiment and fundamentals?
 
@@ -2356,9 +2411,18 @@ JSON response:
       }
     }
 
+    // Pre-fetch all snapshots in one batched call (parallel resolve + single rates call)
+    const allSymbols = [...aggregated.keys()];
+    let snapshotMap: Record<string, Snapshot> = {};
+    try {
+      snapshotMap = await broker.marketData.getSnapshots(allSymbols);
+    } catch {
+      // fallback: individual calls in researchSignal
+    }
+
     const results: ResearchResult[] = [];
     for (const [symbol, data] of aggregated) {
-      const analysis = await this.researchSignal(symbol, data.sentiment, data.sources);
+      const analysis = await this.researchSignal(symbol, data.sentiment, data.sources, snapshotMap[symbol] ?? snapshotMap[symbol.toUpperCase()]);
       if (analysis) {
         results.push(analysis);
       }

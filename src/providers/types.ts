@@ -25,6 +25,7 @@ export interface Account {
 }
 
 export interface Position {
+  position_id?: string;
   asset_id: string;
   symbol: string;
   exchange: string;

@@ -30,6 +30,7 @@ export interface Env {
   CLOUDFLARE_AI_GATEWAY_TOKEN?: string;
   LLM_PROVIDER?: "openai-raw" | "ai-sdk" | "cloudflare-gateway" | "azure-openai";
   LLM_MODEL?: string;
+  DEBUG?: string;
   TWITTER_BEARER_TOKEN?: string;
   DISCORD_WEBHOOK_URL?: string;
   MAKORA_API_TOKEN: string;
