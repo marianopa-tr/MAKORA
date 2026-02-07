@@ -1,0 +1,41 @@
+{
+	"$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+	"name": "makora-app",
+	"main": "src/app-worker.ts",
+	"compatibility_date": "2026-02-04",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		"WORKER_MODE": "app"
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SESSION",
+				"class_name": "SessionDO"
+			},
+			{
+				"name": "MCP_AGENT",
+				"class_name": "MakoraMcpAgent"
+			},
+			{
+				"name": "MAKORA_HARNESS",
+				"class_name": "MakoraHarness"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"SessionDO",
+				"MakoraMcpAgent",
+				"MakoraHarness"
+			]
+		}
+	],
+	"dev": {
+		"port": 8788
+	}
+}
