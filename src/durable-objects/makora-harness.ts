@@ -869,8 +869,9 @@ export class MakoraHarness extends DurableObject<Env> {
       this.initializeLLM();
 
       // Reschedule alarm if stale - in local dev, past alarms don't fire on restart;
-      // in production this is a defensive check for edge cases (long inactivity, redeployments)
-      if (this.state.enabled) {
+      // in production this is a defensive check for edge cases (long inactivity, redeployments).
+      // Demo instances (no server-side ETORO_API_KEY) are tick-driven, so skip.
+      if (this.state.enabled && this.env.ETORO_API_KEY) {
         const existingAlarm = await this.ctx.storage.getAlarm();
         const now = Date.now();
         if (!existingAlarm || existingAlarm < now) {
@@ -1007,6 +1008,10 @@ export class MakoraHarness extends DurableObject<Env> {
   }
 
   private async scheduleNextAlarm(): Promise<void> {
+    // Demo instances are driven by browser ticks, not alarms.
+    // They have no server-side ETORO_API_KEY set in env.
+    if (!this.env.ETORO_API_KEY) return;
+
     const nextRun = Date.now() + 30_000; // 30 seconds
     await this.ctx.storage.setAlarm(nextRun);
   }
@@ -1062,25 +1067,40 @@ export class MakoraHarness extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const action = url.pathname.slice(1);
+    const isDemoMode = request.headers.get("X-Demo-Mode") === "true";
 
-    const protectedActions = [
-      "enable",
-      "disable",
-      "config",
-      "trigger",
-      "status",
-      "logs",
-      "costs",
-      "signals",
-      "history",
-      "setup/status",
-    ];
-    if (protectedActions.includes(action)) {
-      if (!this.isAuthorized(request)) {
-        return this.unauthorizedResponse();
+    // Demo-mode requests are authenticated via eToro keys, not API token
+    if (!isDemoMode) {
+      const protectedActions = [
+        "enable",
+        "disable",
+        "config",
+        "trigger",
+        "status",
+        "logs",
+        "costs",
+        "signals",
+        "history",
+        "setup/status",
+      ];
+      if (protectedActions.includes(action)) {
+        if (!this.isAuthorized(request)) {
+          return this.unauthorizedResponse();
+        }
       }
     }
 
+    // In demo mode, temporarily inject eToro keys from request headers
+    // so all trading calls use the demo user's credentials.
+    // DOs are single-threaded, so this is safe.
+    if (isDemoMode) {
+      return this.withDemoKeys(request, () => this.dispatchAction(action, request, url));
+    }
+
+    return this.dispatchAction(action, request, url);
+  }
+
+  private async dispatchAction(action: string, request: Request, url: URL): Promise<Response> {
     try {
       switch (action) {
         case "status":
@@ -1110,8 +1130,18 @@ export class MakoraHarness extends DurableObject<Env> {
         case "signals":
           return this.jsonResponse({ signals: this.state.signalCache });
 
+        case "shared-data":
+          return this.jsonResponse({
+            signalCache: this.state.signalCache,
+            signalResearch: this.state.signalResearch,
+            config: this.state.config,
+          });
+
         case "history":
           return this.handleGetHistory(url);
+
+        case "tick":
+          return this.handleDemoTick(request);
 
         case "trigger":
           await this.alarm();
@@ -1135,6 +1165,110 @@ export class MakoraHarness extends DurableObject<Env> {
         headers: { "Content-Type": "application/json" },
       });
     }
+  }
+
+  // ── Demo mode helpers ───────────────────────────────────────────────
+  // In demo mode, eToro keys come from request headers instead of env.
+  // We temporarily inject them into this.env so all existing trading
+  // code works unchanged.  DOs are single-threaded, so no race.
+  // ────────────────────────────────────────────────────────────────────
+
+  private async withDemoKeys(
+    request: Request,
+    fn: () => Promise<Response>
+  ): Promise<Response> {
+    const origApiKey = this.env.ETORO_API_KEY;
+    const origUserKey = this.env.ETORO_USER_KEY;
+    const origEnv = this.env.ETORO_ENV;
+
+    this.env.ETORO_API_KEY = request.headers.get("X-Etoro-Api-Key") ?? "";
+    this.env.ETORO_USER_KEY = request.headers.get("X-Etoro-User-Key") ?? "";
+    this.env.ETORO_ENV = (request.headers.get("X-Etoro-Env") ?? "demo") as "demo" | "real";
+
+    try {
+      // Fetch shared signal data directly from the main harness.
+      // This avoids passing large JSON through HTTP headers.
+      await this.ingestSharedData();
+
+      return await fn();
+    } finally {
+      this.env.ETORO_API_KEY = origApiKey;
+      this.env.ETORO_USER_KEY = origUserKey;
+      this.env.ETORO_ENV = origEnv;
+    }
+  }
+
+  /** Fetch shared intelligence from the main harness and merge into local state. */
+  private async ingestSharedData(): Promise<void> {
+    if (!this.env.MAKORA_HARNESS) return;
+    try {
+      const mainId = this.env.MAKORA_HARNESS.idFromName("main");
+      const mainStub = this.env.MAKORA_HARNESS.get(mainId);
+      const res = await mainStub.fetch(new Request("http://harness/shared-data"));
+      if (!res.ok) return;
+
+      const shared = (await res.json()) as {
+        signalCache?: unknown[];
+        signalResearch?: Record<string, unknown>;
+        config?: Record<string, unknown>;
+      };
+
+      if (shared.signalCache && Array.isArray(shared.signalCache) && shared.signalCache.length > 0) {
+        this.state.signalCache = shared.signalCache as Signal[];
+      }
+      if (shared.signalResearch && Object.keys(shared.signalResearch).length > 0) {
+        this.state.signalResearch = shared.signalResearch as Record<string, ResearchResult>;
+      }
+      // Copy config from main harness on first use (demo instance starts with defaults)
+      if (shared.config && !this.state.enabled) {
+        this.state.config = { ...DEFAULT_CONFIG, ...(shared.config as Partial<AgentConfig>) };
+      }
+    } catch {
+      // Main harness unavailable — continue with existing state
+    }
+  }
+
+  /**
+   * Demo tick: runs a single analyst cycle using the demo user's eToro keys
+   * and the shared signal intelligence from the main harness.
+   * Called by the demo dashboard every ~30 seconds.
+   */
+  private async handleDemoTick(_request: Request): Promise<Response> {
+    // Auto-enable on first tick (demo users don't call /enable)
+    if (!this.state.enabled) {
+      this.state.enabled = true;
+      this.log("System", "demo_enabled", { message: "Demo mode activated" });
+    }
+
+    try {
+      const broker = createEtoroProviders(this.env);
+      const clock = await broker.trading.getClock();
+
+      const now = Date.now();
+
+      // Run analyst if enough time has passed (respect pacing)
+      if (now - this.state.lastAnalystRun >= this.state.config.analyst_interval_ms) {
+        if (clock.is_open) {
+          await this.runAnalyst();
+          this.state.lastAnalystRun = now;
+        } else {
+          this.log("System", "tick_skipped", { reason: "Market closed" });
+        }
+      }
+
+      // Run crypto trading if enabled
+      if (this.state.config.crypto_enabled) {
+        const positions = await broker.trading.getPositions();
+        await this.runCryptoTrading(broker, positions);
+      }
+
+      await this.persist();
+    } catch (error) {
+      this.log("System", "tick_error", { error: String(error) });
+    }
+
+    // Return full status so the dashboard has everything in one call
+    return this.handleStatus();
   }
 
   private async handleStatus(): Promise<Response> {
@@ -2288,6 +2422,24 @@ JSON response:
           price = snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
         }
       }
+
+      // If we can't get a price, the symbol is not tradable on this broker — auto-SKIP
+      if (price <= 0) {
+        const skipResult: ResearchResult = {
+          symbol,
+          verdict: "SKIP" as const,
+          confidence: 0,
+          entry_quality: "poor" as const,
+          reasoning: `Cannot retrieve price data for ${symbol} — the instrument is likely not available on this broker.`,
+          red_flags: ["Instrument not available on broker"],
+          catalysts: [],
+          timestamp: Date.now(),
+        };
+        this.state.signalResearch[symbol] = skipResult;
+        this.log("SignalResearch", "skipped_no_price", { symbol, reason: "Price unavailable on broker" });
+        return skipResult;
+      }
+
       const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
 
       const prompt = `Should we BUY this ${isCrypto ? "crypto" : "stock"} based on social sentiment and fundamentals?
@@ -2296,7 +2448,7 @@ SYMBOL: ${symbol}
 SENTIMENT: ${(sentimentScore * 100).toFixed(0)}% bullish (sources: ${sources.join(", ")})
 
 CURRENT DATA:
-- Price: $${price}
+- Price: $${price.toFixed(2)}
 
 Evaluate if this is a good entry. Consider: Is the sentiment justified? Is it too late (already pumped)? Any red flags?
 

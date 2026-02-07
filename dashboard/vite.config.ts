@@ -15,6 +15,11 @@ export default defineConfig({
         secure: true,
         rewrite: (path) => path.replace(/^\/api/, '/agent'),
       },
+      '/app/': {
+        target: apiTarget,
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })
