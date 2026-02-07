@@ -9,8 +9,11 @@
 .env
 .env.*
 !.env.example
+!.env.docker.example
 wrangler.jsonc
+wrangler-app.jsonc
 !wrangler.example.jsonc
+!wrangler-app.example.jsonc
 
 # Agent runtime files (contain personal trading data)
 agent-config.json

@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+dashboard/node_modules/
+
+# Build artifacts
+dashboard/dist/
+.wrangler/
+
+# Git
+.git/
+.github/
+
+# Environment / secrets
+.dev.vars
+.env.docker
+*.local
+
+# IDE
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+
+# Docs (not needed for Docker build)
+docs/
+
+# Example configs (we COPY the real ones)
+wrangler.example.jsonc
+agent-config.example.json

@@ -1,0 +1,46 @@
+# ── Makora Shared App — Docker Compose ───────────────────────────────
+# Runs the full shared app locally on any server, no Cloudflare needed.
+#
+# Usage:
+#   1. cp .env.docker.example .env.docker
+#   2. Edit .env.docker with your API keys
+#   3. docker compose up --build
+#   4. Open http://localhost:3000/app
+#
+# The worker runs on port 8788 (API only).
+# The dashboard runs on port 3000 (UI + API proxy).
+# ─────────────────────────────────────────────────────────────────────
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${WORKER_PORT:-8788}:8788"
+    env_file:
+      - .env.docker
+    volumes:
+      - worker-state:/app/.wrangler/state
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8788/health').then(r=>{if(!r.ok)throw 1})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
+    depends_on:
+      worker:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  worker-state:
+    driver: local

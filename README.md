@@ -224,6 +224,64 @@ VITE_APP_API_BASE="" npm run build   # in the dashboard/ directory
 
 For the default full-worker deployment, no configuration is needed — the dashboard defaults to `/app` as the API base.
 
+### Docker deployment
+
+Run the Shared App on any server using Docker — no Cloudflare account required. Under the hood it uses [workerd](https://github.com/cloudflare/workerd) (Cloudflare's open-source Workers runtime), so all features work identically to a cloud deployment.
+
+**1. Configure**
+
+```bash
+cp .env.docker.example .env.docker
+# Edit .env.docker — set your LLM provider key at minimum
+```
+
+**2. Start**
+
+```bash
+docker compose up --build -d
+```
+
+This starts two containers:
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `worker` | 8788 | Trading agent API (wrangler + workerd) |
+| `dashboard` | 3000 | React UI + nginx reverse proxy |
+
+**3. Open the dashboard**
+
+Navigate to `http://localhost:3000` — you'll be redirected to the Shared App page where you can connect your eToro account.
+
+**4. Persistence**
+
+Durable Object state (positions, signals, config) is persisted in a Docker volume (`worker-state`). Data survives container restarts.
+
+```bash
+# Stop without losing state
+docker compose down
+
+# Stop AND remove all state
+docker compose down -v
+```
+
+**5. Run worker only (no UI)**
+
+If you only need the API:
+
+```bash
+docker build -t makora-worker .
+docker run -p 8788:8788 --env-file .env.docker makora-worker
+```
+
+Then call the API directly:
+
+```bash
+curl -H "X-Etoro-Api-Key: YOUR_KEY" \
+     -H "X-Etoro-User-Key: YOUR_USER_KEY" \
+     -H "X-Etoro-Env: demo" \
+     http://localhost:8788/status
+```
+
 ## Customizing the Harness
 
 The main trading logic is in `src/durable-objects/makora-harness.ts`. It's documented with markers to help you find what to modify:
