@@ -1,0 +1,98 @@
+{
+	"$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+	// ─── App-only deployment ───────────────────────────────────────────
+	// This config deploys ONLY the self-service /app routes at the root
+	// level. Users connect their eToro keys via headers — no server-side
+	// ETORO_API_KEY needed (unless you also want a main harness gathering
+	// shared signals).
+	//
+	// Usage:
+	//   npx wrangler deploy -c wrangler-app.jsonc
+	//   npx wrangler dev -c wrangler-app.jsonc
+	// ───────────────────────────────────────────────────────────────────
+	"name": "makora-app",
+	"main": "src/app-worker.ts",
+	"compatibility_date": "2024-12-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		"ENVIRONMENT": "production",
+		"WORKER_MODE": "app",
+		"FEATURE_LLM_RESEARCH": "true",
+		"FEATURE_OPTIONS": "false",
+		"DEFAULT_MAX_POSITION_PCT": "0.10",
+		"DEFAULT_MAX_NOTIONAL_PER_TRADE": "5000",
+		"DEFAULT_MAX_DAILY_LOSS_PCT": "0.02",
+		"DEFAULT_COOLDOWN_MINUTES": "30",
+		"DEFAULT_MAX_OPEN_POSITIONS": "10",
+		"DEFAULT_APPROVAL_TTL_SECONDS": "300"
+	},
+	// Secrets (set via `wrangler secret put <NAME> -c wrangler-app.jsonc`):
+	//
+	// Required:
+	// - MAKORA_API_TOKEN  (used internally; generate with: openssl rand -base64 48)
+	// - KILL_SWITCH_SECRET
+	//
+	// Optional (for shared signal gathering — if you also want a main harness):
+	// - ETORO_API_KEY, ETORO_USER_KEY, ETORO_ENV
+	//
+	// LLM Provider (for signal research):
+	// - LLM_PROVIDER, LLM_MODEL
+	// - OPENAI_API_KEY / AZURE_API_KEY / ANTHROPIC_API_KEY / etc.
+	//
+	// Note: Individual users' eToro keys come from browser headers,
+	// NOT from these secrets.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "makora-app-db",
+			"database_id": "<YOUR_D1_DATABASE_ID>",
+			"migrations_dir": "migrations"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "CACHE",
+			"id": "<YOUR_KV_NAMESPACE_ID>"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "ARTIFACTS",
+			"bucket_name": "makora-app-artifacts"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SESSION",
+				"class_name": "SessionDO"
+			},
+			{
+				"name": "MCP_AGENT",
+				"class_name": "MakoraMcpAgent"
+			},
+			{
+				"name": "MAKORA_HARNESS",
+				"class_name": "MakoraHarness"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"SessionDO",
+				"MakoraMcpAgent",
+				"MakoraHarness"
+			]
+		}
+	],
+	"build": {
+		"command": "npm run build"
+	},
+	"dev": {
+		"port": 8788
+	}
+}

@@ -10,40 +10,50 @@ import type { Status, Position, SignalResearch } from './types'
 // ── API helper ──────────────────────────────────────────────────────
 // Sends eToro credentials from localStorage as custom headers.
 // Keys are never stored server-side.
+//
+// API_BASE is configurable via VITE_APP_API_BASE:
+//   - "/app"  (default) — for full deployment where routes are /app/*
+//   - ""      — for standalone deployment where routes are at root /
 // ────────────────────────────────────────────────────────────────────
 
-interface DemoKeys {
+const API_BASE = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_APP_API_BASE ?? '/app'
+
+interface AppKeys {
   apiKey: string
   userKey: string
   env: 'demo' | 'real'
 }
 
-function getDemoKeys(): DemoKeys | null {
+const STORAGE_KEY = 'makora_app_keys'
+
+function getAppKeys(): AppKeys | null {
   try {
-    const raw = localStorage.getItem('demo_etoro_keys')
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('demo_etoro_keys')
     if (!raw) return null
-    return JSON.parse(raw) as DemoKeys
+    return JSON.parse(raw) as AppKeys
   } catch {
     return null
   }
 }
 
-function saveDemoKeys(keys: DemoKeys) {
-  localStorage.setItem('demo_etoro_keys', JSON.stringify(keys))
-}
-
-function clearDemoKeys() {
+function saveAppKeys(keys: AppKeys) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keys))
   localStorage.removeItem('demo_etoro_keys')
 }
 
-function demoFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const keys = getDemoKeys()
-  if (!keys) return Promise.reject(new Error('No demo keys configured'))
+function clearAppKeys() {
+  localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem('demo_etoro_keys')
+}
+
+function appFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const keys = getAppKeys()
+  if (!keys) return Promise.reject(new Error('No app keys configured'))
   const headers = new Headers(options.headers)
   headers.set('X-Etoro-Api-Key', keys.apiKey)
   headers.set('X-Etoro-User-Key', keys.userKey)
   headers.set('X-Etoro-Env', keys.env || 'demo')
-  return fetch(`/app${path}`, { ...options, headers })
+  return fetch(`${API_BASE}${path}`, { ...options, headers })
 }
 
 // ── Formatting helpers ──────────────────────────────────────────────
@@ -139,15 +149,15 @@ function KeyEntryForm({ onConnect }: { onConnect: () => void }) {
     setError(null)
 
     try {
-      saveDemoKeys({ apiKey: apiKey.trim(), userKey: userKey.trim(), env })
-      const res = await demoFetch('/status')
+      saveAppKeys({ apiKey: apiKey.trim(), userKey: userKey.trim(), env })
+      const res = await appFetch('/status')
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Connection failed' }))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
       onConnect()
     } catch (err) {
-      clearDemoKeys()
+      clearAppKeys()
       setError(err instanceof Error ? err.message : 'Connection failed')
     } finally {
       setLoading(false)
@@ -290,7 +300,7 @@ function KeyEntryForm({ onConnect }: { onConnect: () => void }) {
 
 // ── Phase 2: Live Dashboard ─────────────────────────────────────────
 
-function DemoDashboard({ onDisconnect }: { onDisconnect: () => void }) {
+function SharedDashboard({ onDisconnect }: { onDisconnect: () => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [time, setTime] = useState(new Date())
@@ -299,7 +309,7 @@ function DemoDashboard({ onDisconnect }: { onDisconnect: () => void }) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await demoFetch('/status')
+      const res = await appFetch('/status')
       if (res.status === 401) {
         setError('Invalid credentials — please reconnect')
         return
@@ -321,7 +331,7 @@ function DemoDashboard({ onDisconnect }: { onDisconnect: () => void }) {
     tickInFlightRef.current = true
     setTickInFlight(true)
     try {
-      const res = await demoFetch('/tick', { method: 'POST' })
+      const res = await appFetch('/tick', { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         if (data.ok) {
@@ -374,7 +384,7 @@ function DemoDashboard({ onDisconnect }: { onDisconnect: () => void }) {
     SignalResearch
   >
 
-  const keys = getDemoKeys()
+  const keys = getAppKeys()
   const envLabel = keys?.env === 'real' ? 'REAL' : 'DEMO'
 
   // ── Render ────────────────────────────────────────────────────
@@ -382,7 +392,7 @@ function DemoDashboard({ onDisconnect }: { onDisconnect: () => void }) {
   return (
     <div className="min-h-screen bg-hud-bg">
       <div className="max-w-[1920px] mx-auto p-4">
-        {/* Demo mode banner */}
+        {/* Environment banner */}
         <div
           className={clsx(
             'mb-3 px-4 py-2 text-[10px] uppercase tracking-wider text-center border',
@@ -871,13 +881,13 @@ function DemoDashboard({ onDisconnect }: { onDisconnect: () => void }) {
   )
 }
 
-// ── Main DemoPage ───────────────────────────────────────────────────
+// ── Main SharedAppPage ──────────────────────────────────────────────
 
-export default function DemoAppPage() {
-  const [connected, setConnected] = useState(() => !!getDemoKeys())
+export default function SharedAppPage() {
+  const [connected, setConnected] = useState(() => !!getAppKeys())
 
   const handleDisconnect = () => {
-    clearDemoKeys()
+    clearAppKeys()
     setConnected(false)
   }
 
@@ -885,5 +895,5 @@ export default function DemoAppPage() {
     return <KeyEntryForm onConnect={() => setConnected(true)} />
   }
 
-  return <DemoDashboard onDisconnect={handleDisconnect} />
+  return <SharedDashboard onDisconnect={handleDisconnect} />
 }

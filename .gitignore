@@ -28,6 +28,7 @@ dashboard/node_modules/
 # Build Outputs
 # -----------------------------------------------------------------------------
 dist/
+dist-app/
 build/
 *.js.map
 .wrangler/

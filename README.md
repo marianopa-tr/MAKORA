@@ -10,7 +10,7 @@ MAKORA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, An
 
 ## Features
 
-- **Powered by eToro** - Works directly with your demo or real eToro portfolio
+- **Powered by eToro** - Works directly with your demo or real eToro portfolio`
 - **24/7 Operation** — Runs on Cloudflare Workers, no local machine required
 - **Multi-Source Signals** — StockTwits, Reddit (4 subreddits), Twitter confirmation
 - **Multi-Provider LLM** — OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK or Cloudflare AI Gateway
@@ -136,6 +136,93 @@ cd dashboard && npm run dev
 curl -H "Authorization: Bearer $MAKORA_TOKEN" \
   http://localhost:8787/agent/enable
 ```
+
+## Shared App
+
+The Shared App lets other users connect their own eToro account to your MAKORA instance and trade autonomously using the shared signal intelligence gathered by your main harness. Users provide their eToro API keys through the browser (stored only in `localStorage` — never on your server), and each user gets an isolated Durable Object agent.
+
+The UI is available at `/app` on your dashboard.
+
+### How it works
+
+1. **Main harness** — Your primary deployment gathers signals from StockTwits, Reddit, and runs LLM research as usual.
+2. **Per-user agents** — When a user connects via `/app`, a dedicated Durable Object is created for them (keyed by a hash of their eToro credentials). Each tick, the per-user agent fetches shared signals from the main harness and runs its own analyst/trading cycle against the user's eToro account.
+3. **Isolation** — Each user's agent is fully isolated. eToro credentials stay in the browser and are sent as headers per-request — they're never stored server-side.
+
+### Deployment options
+
+#### Option A: Part of the full worker (default)
+
+The `/app` routes are included automatically when you deploy the full worker. No extra configuration needed — users access `/app` on your existing worker URL.
+
+#### Option B: Standalone Shared App worker
+
+Deploy **only** the Shared App on a dedicated endpoint (e.g. `makora-app.your-domain.workers.dev`), where all routes are served at the root path (no `/app` prefix).
+
+**1. Create Cloudflare resources (separate from your main deployment)**
+
+```bash
+# Create D1 database for the app worker
+npx wrangler d1 create makora-app-db
+
+# Create KV namespace
+npx wrangler kv namespace create CACHE
+
+# Run migrations
+npx wrangler d1 migrations apply makora-app-db
+```
+
+**2. Create the wrangler config**
+
+```bash
+cp wrangler-app.example.jsonc wrangler-app.jsonc
+```
+
+Edit `wrangler-app.jsonc` and fill in your D1 database ID and KV namespace ID from step 1.
+
+**3. Set secrets**
+
+```bash
+# Required
+npx wrangler secret put MAKORA_API_TOKEN -c wrangler-app.jsonc
+npx wrangler secret put KILL_SWITCH_SECRET -c wrangler-app.jsonc
+
+# LLM Provider (for signal research)
+npx wrangler secret put LLM_PROVIDER -c wrangler-app.jsonc
+npx wrangler secret put LLM_MODEL -c wrangler-app.jsonc
+npx wrangler secret put OPENAI_API_KEY -c wrangler-app.jsonc  # or your preferred provider key
+
+# Optional: main harness eToro keys (for shared signal gathering)
+npx wrangler secret put ETORO_API_KEY -c wrangler-app.jsonc
+npx wrangler secret put ETORO_USER_KEY -c wrangler-app.jsonc
+npx wrangler secret put ETORO_ENV -c wrangler-app.jsonc
+```
+
+> **Note:** Individual users' eToro keys come from browser headers, not from these secrets. The optional `ETORO_API_KEY` / `ETORO_USER_KEY` secrets are only needed if you want the standalone worker to also gather its own shared signals (main harness). Without them, the app still works but without shared intelligence.
+
+**4. Deploy**
+
+```bash
+npm run deploy:app
+```
+
+**5. Local development**
+
+```bash
+npm run dev:app
+```
+
+The standalone app worker runs on port `8788` by default (to avoid conflicts with the full worker on `8787`).
+
+### Dashboard configuration
+
+When building the dashboard for a standalone Shared App deployment, set the `VITE_APP_API_BASE` environment variable to an empty string so the frontend calls routes at the root path instead of under `/app`:
+
+```bash
+VITE_APP_API_BASE="" npm run build   # in the dashboard/ directory
+```
+
+For the default full-worker deployment, no configuration is needed — the dashboard defaults to `/app` as the API base.
 
 ## Customizing the Harness
 

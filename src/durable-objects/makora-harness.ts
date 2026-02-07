@@ -1067,10 +1067,10 @@ export class MakoraHarness extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const action = url.pathname.slice(1);
-    const isDemoMode = request.headers.get("X-Demo-Mode") === "true";
+    const isSharedApp = request.headers.get("X-Shared-App") === "true";
 
-    // Demo-mode requests are authenticated via eToro keys, not API token
-    if (!isDemoMode) {
+    // Shared-app requests are authenticated via eToro keys, not API token
+    if (!isSharedApp) {
       const protectedActions = [
         "enable",
         "disable",
@@ -1093,8 +1093,8 @@ export class MakoraHarness extends DurableObject<Env> {
     // In demo mode, temporarily inject eToro keys from request headers
     // so all trading calls use the demo user's credentials.
     // DOs are single-threaded, so this is safe.
-    if (isDemoMode) {
-      return this.withDemoKeys(request, () => this.dispatchAction(action, request, url));
+    if (isSharedApp) {
+      return this.withAppKeys(request, () => this.dispatchAction(action, request, url));
     }
 
     return this.dispatchAction(action, request, url);
@@ -1141,7 +1141,7 @@ export class MakoraHarness extends DurableObject<Env> {
           return this.handleGetHistory(url);
 
         case "tick":
-          return this.handleDemoTick(request);
+          return this.handleAppTick(request);
 
         case "trigger":
           await this.alarm();
@@ -1167,13 +1167,13 @@ export class MakoraHarness extends DurableObject<Env> {
     }
   }
 
-  // ── Demo mode helpers ───────────────────────────────────────────────
-  // In demo mode, eToro keys come from request headers instead of env.
+  // ── Shared app helpers ─────────────────────────────────────────────
+  // In shared-app mode, eToro keys come from request headers instead of env.
   // We temporarily inject them into this.env so all existing trading
   // code works unchanged.  DOs are single-threaded, so no race.
   // ────────────────────────────────────────────────────────────────────
 
-  private async withDemoKeys(
+  private async withAppKeys(
     request: Request,
     fn: () => Promise<Response>
   ): Promise<Response> {
@@ -1219,7 +1219,7 @@ export class MakoraHarness extends DurableObject<Env> {
       if (shared.signalResearch && Object.keys(shared.signalResearch).length > 0) {
         this.state.signalResearch = shared.signalResearch as Record<string, ResearchResult>;
       }
-      // Copy config from main harness on first use (demo instance starts with defaults)
+      // Copy config from main harness on first use (shared-app instance starts with defaults)
       if (shared.config && !this.state.enabled) {
         this.state.config = { ...DEFAULT_CONFIG, ...(shared.config as Partial<AgentConfig>) };
       }
@@ -1229,15 +1229,15 @@ export class MakoraHarness extends DurableObject<Env> {
   }
 
   /**
-   * Demo tick: runs a single analyst cycle using the demo user's eToro keys
+   * App tick: runs a single analyst cycle using the shared-app user's eToro keys
    * and the shared signal intelligence from the main harness.
-   * Called by the demo dashboard every ~30 seconds.
+   * Called by the shared app dashboard every ~30 seconds.
    */
-  private async handleDemoTick(_request: Request): Promise<Response> {
-    // Auto-enable on first tick (demo users don't call /enable)
+  private async handleAppTick(_request: Request): Promise<Response> {
+    // Auto-enable on first tick (shared-app users don't call /enable)
     if (!this.state.enabled) {
       this.state.enabled = true;
-      this.log("System", "demo_enabled", { message: "Demo mode activated" });
+      this.log("System", "app_enabled", { message: "Shared app mode activated" });
     }
 
     try {

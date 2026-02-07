@@ -7,6 +7,8 @@
     "dev": "wrangler dev src/index.ts",
     "build": "tsc",
     "deploy": "wrangler deploy",
+    "deploy:app": "wrangler deploy -c wrangler-app.jsonc",
+    "dev:app": "wrangler dev -c wrangler-app.jsonc",
     "deploy:production": "wrangler deploy --env production",
     "db:migrate": "wrangler d1 migrations apply makora-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply makora-db --remote",

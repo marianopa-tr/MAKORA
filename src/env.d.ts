@@ -37,6 +37,8 @@ export interface Env {
   KILL_SWITCH_SECRET: string;
 
   ENVIRONMENT: string;
+  /** "full" (default) = all routes, "app" = app-only mode (self-service at root) */
+  WORKER_MODE?: "full" | "app";
   FEATURE_LLM_RESEARCH: string;
   FEATURE_OPTIONS: string;
 
