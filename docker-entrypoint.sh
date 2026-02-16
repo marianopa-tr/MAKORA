@@ -31,7 +31,9 @@ for var in OPENAI_API_KEY OPENAI_BASE_URL \
            XAI_API_KEY DEEPSEEK_API_KEY \
            CLOUDFLARE_AI_GATEWAY_ACCOUNT_ID CLOUDFLARE_AI_GATEWAY_ID CLOUDFLARE_AI_GATEWAY_TOKEN; do
   eval val=\$$var
-  [ -n "$val" ] && echo "$var=$val" >> /app/.dev.vars
+  if [ -n "$val" ]; then
+    echo "$var=$val" >> /app/.dev.vars
+  fi
 done
 
 # ── Optional: eToro keys for shared signal gathering ────────────────
@@ -39,13 +41,17 @@ done
 # These are only needed if you want the main harness to gather signals.
 for var in ETORO_API_KEY ETORO_USER_KEY ETORO_ENV; do
   eval val=\$$var
-  [ -n "$val" ] && echo "$var=$val" >> /app/.dev.vars
+  if [ -n "$val" ]; then
+    echo "$var=$val" >> /app/.dev.vars
+  fi
 done
 
 # ── Optional: miscellaneous ─────────────────────────────────────────
 for var in DEBUG DISCORD_WEBHOOK_URL TWITTER_BEARER_TOKEN; do
   eval val=\$$var
-  [ -n "$val" ] && echo "$var=$val" >> /app/.dev.vars
+  if [ -n "$val" ]; then
+    echo "$var=$val" >> /app/.dev.vars
+  fi
 done
 
 echo "[docker] Starting Makora Shared App worker on port 8788..."

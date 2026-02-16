@@ -1,15 +1,12 @@
-# ── Makora Shared App — Single Image Compose ─────────────────────────
-# Runs the full shared app (worker + dashboard) in one container image.
+# ── Makora Shared App — Single Container Compose ──────────────────────
+# Runs the full shared app (worker + dashboard) in one image.
 #
 # Usage:
 #   1. cp .env.docker.example .env.docker
 #   2. Edit .env.docker with your API keys
-#   3. docker compose up --build
+#   3. docker compose -f docker-compose.single.yml up --build
 #   4. Open http://localhost:3000/app
-#
-# The app is served on port 3000.
-# Internal worker API is also exposed on 8788.
-# ─────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
 
 services:
   shared-app:

@@ -1,4 +1,4 @@
-name: Publish Docker Packages
+name: Publish Shared App Package
 
 on:
   push:
@@ -32,38 +32,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Worker image metadata
-        id: worker_meta
+      - name: Shared app image metadata
+        id: shared_meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ steps.namespace.outputs.owner_lc }}/makora-worker
+          images: ghcr.io/${{ steps.namespace.outputs.owner_lc }}/makora-shared-app
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short
 
-      - name: Build and push worker image
+      - name: Build and push shared app image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
+          file: ./Dockerfile.shared
           push: true
-          tags: ${{ steps.worker_meta.outputs.tags }}
-          labels: ${{ steps.worker_meta.outputs.labels }}
-
-      - name: Dashboard image metadata
-        id: dashboard_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ steps.namespace.outputs.owner_lc }}/makora-dashboard
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
-
-      - name: Build and push dashboard image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.dashboard
-          push: true
-          tags: ${{ steps.dashboard_meta.outputs.tags }}
-          labels: ${{ steps.dashboard_meta.outputs.labels }}
+          tags: ${{ steps.shared_meta.outputs.tags }}
+          labels: ${{ steps.shared_meta.outputs.labels }}
