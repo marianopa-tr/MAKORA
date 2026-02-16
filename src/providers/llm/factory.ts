@@ -33,7 +33,7 @@ export function createLLMProvider(env: Env): LLMProvider | null {
         (env.AZURE_RESOURCE_NAME ? `https://${env.AZURE_RESOURCE_NAME}.openai.azure.com` : undefined);
       const azureDeploymentRaw = env.AZURE_DEPLOYMENT ?? model;
       const azureDeployment = azureDeploymentRaw.includes("/")
-        ? azureDeploymentRaw.split("/").pop() ?? azureDeploymentRaw
+        ? (azureDeploymentRaw.split("/").pop() ?? azureDeploymentRaw)
         : azureDeploymentRaw;
 
       if (!azureApiKey || !azureEndpoint) {
@@ -112,10 +112,7 @@ export function isLLMConfigured(env: Env): boolean {
 
   switch (providerType) {
     case "azure-openai":
-      return !!(
-        env.AZURE_API_KEY &&
-        (env.AZURE_ENDPOINT || env.AZURE_RESOURCE_NAME)
-      );
+      return !!(env.AZURE_API_KEY && (env.AZURE_ENDPOINT || env.AZURE_RESOURCE_NAME));
     case "cloudflare-gateway":
       return !!(
         env.CLOUDFLARE_AI_GATEWAY_ACCOUNT_ID &&

@@ -673,9 +673,7 @@ class ValidTickerCache {
     symbols: string[],
     broker: { trading: { preResolveSymbols(s: string[]): Promise<Map<string, { tradable: boolean }>> } }
   ): Promise<void> {
-    const uncached = symbols
-      .map((s) => s.toUpperCase())
-      .filter((s) => this.brokerCache.get(s) === undefined);
+    const uncached = symbols.map((s) => s.toUpperCase()).filter((s) => this.brokerCache.get(s) === undefined);
 
     if (uncached.length === 0) return;
 
@@ -1058,10 +1056,10 @@ export class MakoraHarness extends DurableObject<Env> {
   }
 
   private unauthorizedResponse(): Response {
-    return new Response(
-      JSON.stringify({ error: "Unauthorized. Requires: Authorization: Bearer <MAKORA_API_TOKEN>" }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "Unauthorized. Requires: Authorization: Bearer <MAKORA_API_TOKEN>" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -1173,10 +1171,7 @@ export class MakoraHarness extends DurableObject<Env> {
   // code works unchanged.  DOs are single-threaded, so no race.
   // ────────────────────────────────────────────────────────────────────
 
-  private async withAppKeys(
-    request: Request,
-    fn: () => Promise<Response>
-  ): Promise<Response> {
+  private async withAppKeys(request: Request, fn: () => Promise<Response>): Promise<Response> {
     const origApiKey = this.env.ETORO_API_KEY;
     const origUserKey = this.env.ETORO_USER_KEY;
     const origEnv = this.env.ETORO_ENV;
@@ -1446,7 +1441,38 @@ export class MakoraHarness extends DurableObject<Env> {
       .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
       .slice(0, MAX_SIGNALS);
 
-    this.state.signalCache = freshSignals;
+    let etoroSignals = freshSignals;
+    if (freshSignals.length > 0) {
+      try {
+        const broker = createEtoroProviders(this.env);
+        const validationSymbols = Array.from(
+          new Set(
+            [...freshSignals.map((s) => s.symbol), ...Object.keys(this.state.signalResearch)].map((symbol) =>
+              symbol.toUpperCase()
+            )
+          )
+        );
+        const uncachedSymbols = validationSymbols.filter(
+          (symbol) => tickerCache.getCachedValidation(symbol) === undefined
+        );
+        if (uncachedSymbols.length > 0) {
+          await tickerCache.validateSymbolsBatch(uncachedSymbols, broker);
+        }
+
+        etoroSignals = freshSignals.filter((signal) => tickerCache.getCachedValidation(signal.symbol) === true);
+
+        for (const symbol of Object.keys(this.state.signalResearch)) {
+          if (tickerCache.getCachedValidation(symbol) !== true) {
+            delete this.state.signalResearch[symbol];
+          }
+        }
+      } catch {
+        etoroSignals = [];
+        this.state.signalResearch = {};
+      }
+    }
+
+    this.state.signalCache = etoroSignals;
 
     this.log("System", "data_gathered", {
       stocktwits: stocktwitsSignals.length,
@@ -1657,7 +1683,9 @@ export class MakoraHarness extends DurableObject<Env> {
     const candidateSymbols = [...tickerData.entries()]
       .filter(([, data]) => data.mentions >= 2)
       .map(([symbol]) => symbol)
-      .filter((symbol) => !tickerCache.isKnownSecTicker(symbol) && tickerCache.getCachedValidation(symbol) === undefined);
+      .filter(
+        (symbol) => !tickerCache.isKnownSecTicker(symbol) && tickerCache.getCachedValidation(symbol) === undefined
+      );
     if (candidateSymbols.length > 0) {
       await tickerCache.validateSymbolsBatch(candidateSymbols, broker);
     }
@@ -1667,7 +1695,6 @@ export class MakoraHarness extends DurableObject<Env> {
         if (!tickerCache.isKnownSecTicker(symbol)) {
           const cached = tickerCache.getCachedValidation(symbol);
           if (cached === false) {
-            this.log("Reddit", "invalid_ticker_filtered", { symbol });
             continue;
           }
         }
@@ -2007,6 +2034,10 @@ export class MakoraHarness extends DurableObject<Env> {
       const broker = createEtoroProviders(this.env);
       const snapshot = await broker.marketData.getCryptoSnapshot(symbol).catch(() => null);
       const price = snapshot?.latest_trade?.price || 0;
+      if (!snapshot || price <= 0) {
+        delete this.state.signalResearch[symbol];
+        return null;
+      }
       const dailyChange = snapshot
         ? ((snapshot.daily_bar.c - snapshot.prev_daily_bar.c) / snapshot.prev_daily_bar.c) * 100
         : 0;
@@ -2409,35 +2440,36 @@ JSON response:
     try {
       let price = 0;
       if (prefetchedSnapshot) {
-        price = prefetchedSnapshot.latest_trade?.price || prefetchedSnapshot.latest_quote?.ask_price || prefetchedSnapshot.latest_quote?.bid_price || 0;
+        price =
+          prefetchedSnapshot.latest_trade?.price ||
+          prefetchedSnapshot.latest_quote?.ask_price ||
+          prefetchedSnapshot.latest_quote?.bid_price ||
+          0;
       } else {
         const broker = createEtoroProviders(this.env);
         const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
         if (isCrypto) {
           const normalized = normalizeCryptoSymbol(symbol);
           const snapshot = await broker.marketData.getCryptoSnapshot(normalized).catch(() => null);
-          price = snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+          price =
+            snapshot?.latest_trade?.price ||
+            snapshot?.latest_quote?.ask_price ||
+            snapshot?.latest_quote?.bid_price ||
+            0;
         } else {
           const snapshot = await broker.marketData.getSnapshot(symbol).catch(() => null);
-          price = snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+          price =
+            snapshot?.latest_trade?.price ||
+            snapshot?.latest_quote?.ask_price ||
+            snapshot?.latest_quote?.bid_price ||
+            0;
         }
       }
 
-      // If we can't get a price, the symbol is not tradable on this broker — auto-SKIP
+      // If we can't get a price, skip research and don't surface the symbol.
       if (price <= 0) {
-        const skipResult: ResearchResult = {
-          symbol,
-          verdict: "SKIP" as const,
-          confidence: 0,
-          entry_quality: "poor" as const,
-          reasoning: `Cannot retrieve price data for ${symbol} — the instrument is likely not available on this broker.`,
-          red_flags: ["Instrument not available on broker"],
-          catalysts: [],
-          timestamp: Date.now(),
-        };
-        this.state.signalResearch[symbol] = skipResult;
-        this.log("SignalResearch", "skipped_no_price", { symbol, reason: "Price unavailable on broker" });
-        return skipResult;
+        delete this.state.signalResearch[symbol];
+        return null;
       }
 
       const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
@@ -2574,7 +2606,12 @@ JSON response:
 
     const results: ResearchResult[] = [];
     for (const [symbol, data] of aggregated) {
-      const analysis = await this.researchSignal(symbol, data.sentiment, data.sources, snapshotMap[symbol] ?? snapshotMap[symbol.toUpperCase()]);
+      const analysis = await this.researchSignal(
+        symbol,
+        data.sentiment,
+        data.sources,
+        snapshotMap[symbol] ?? snapshotMap[symbol.toUpperCase()]
+      );
       if (analysis) {
         results.push(analysis);
       }

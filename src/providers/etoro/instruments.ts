@@ -194,7 +194,10 @@ export class EtoroInstrumentCache {
             this.metadataPending = null;
             return data;
           })
-          .catch((err) => { this.metadataPending = null; throw err; });
+          .catch((err) => {
+            this.metadataPending = null;
+            throw err;
+          });
         fetched = await this.metadataPending;
       }
       // Re-check after fetch — the unfiltered call populates idToMeta for all instruments
@@ -216,9 +219,7 @@ export class EtoroInstrumentCache {
 
   // ---- Private helpers ----
 
-  private async searchExactSymbol(
-    symbol: string
-  ): Promise<{ id: number; symbol: string } | null> {
+  private async searchExactSymbol(symbol: string): Promise<{ id: number; symbol: string } | null> {
     const response = await this.client.marketDataRequest<EtoroSearchResponse>("GET", "/market-data/search", {
       internalSymbolFull: symbol,
     });
@@ -251,12 +252,7 @@ export class EtoroInstrumentCache {
   }
 
   private extractSymbol(item: EtoroSearchItem): string | null {
-    const value =
-      item.internalSymbolFull ??
-      item.symbolFull ??
-      item.fullSymbolName ??
-      item.displayName ??
-      item.name;
+    const value = item.internalSymbolFull ?? item.symbolFull ?? item.fullSymbolName ?? item.displayName ?? item.name;
     return value ? value.toUpperCase() : null;
   }
 

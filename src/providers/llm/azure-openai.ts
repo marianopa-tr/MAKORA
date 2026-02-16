@@ -33,7 +33,8 @@ export class AzureOpenAIProvider implements LLMProvider {
 
   constructor(config: AzureOpenAIConfig) {
     this.apiKey = config.apiKey;
-    const rawEndpoint = config.endpoint ?? (config.resourceName ? `https://${config.resourceName}.openai.azure.com` : "");
+    const rawEndpoint =
+      config.endpoint ?? (config.resourceName ? `https://${config.resourceName}.openai.azure.com` : "");
     this.endpoint = rawEndpoint.trim().replace(/\/+$/, "");
     this.deployment = config.deployment ?? "gpt-4o-mini";
     this.apiVersion = config.apiVersion ?? "2024-02-01";

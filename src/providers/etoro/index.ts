@@ -49,6 +49,6 @@ export function createEtoroProviders(env: Env): EtoroProviders {
   return providers;
 }
 
-export { EtoroClient, createEtoroClient } from "./client";
+export { createEtoroClient, EtoroClient } from "./client";
 export { EtoroMarketDataProvider } from "./market-data";
 export { EtoroTradingProvider } from "./trading";

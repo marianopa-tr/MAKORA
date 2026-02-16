@@ -49,7 +49,10 @@ export class EtoroMarketDataProvider implements MarketDataProvider {
   private ratesCache: { data: EtoroRatesResponse; expiresAt: number } | null = null;
   private ratesPending: Promise<EtoroRatesResponse> | null = null;
 
-  constructor(private client: EtoroClient, private instruments: EtoroInstrumentCache) {}
+  constructor(
+    private client: EtoroClient,
+    private instruments: EtoroInstrumentCache
+  ) {}
 
   /** Fetch ALL rates (no filter) with cache + inflight dedup. One call for everything. */
   private getAllRates(): Promise<EtoroRatesResponse> {

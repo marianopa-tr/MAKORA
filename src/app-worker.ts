@@ -14,10 +14,10 @@
  * sets WORKER_MODE=app so all routes are served at the root level.
  */
 
+export { MakoraHarness } from "./durable-objects/makora-harness";
 // Re-export Durable Object classes (Wrangler needs them in the entrypoint)
 export { SessionDO } from "./durable-objects/session";
 export { MakoraMcpAgent } from "./mcp/agent";
-export { MakoraHarness } from "./durable-objects/makora-harness";
 
 import type { Env } from "./env.d";
 import { handleAppRequest } from "./index";

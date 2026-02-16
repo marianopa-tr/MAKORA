@@ -8,9 +8,9 @@ import { consumeApprovalToken, generateApprovalToken, validateApprovalToken } fr
 import { getDefaultPolicyConfig, type PolicyConfig } from "../policy/config";
 import { PolicyEngine } from "../policy/engine";
 import { createEtoroProviders } from "../providers/etoro";
-import { getDTE } from "../providers/options-utils";
 import { classifyEvent, generateResearchReport, summarizeLearnedRules } from "../providers/llm/classifier";
 import { createLLMProvider } from "../providers/llm/factory";
+import { getDTE } from "../providers/options-utils";
 import { extractFinancialData, isAllowedDomain, scrapeUrl } from "../providers/scraper";
 import { computeTechnicals, detectSignals, type Signal, type TechnicalIndicators } from "../providers/technicals";
 import type { LLMProvider, OptionsProvider } from "../providers/types";
@@ -132,10 +132,7 @@ export class MakoraMcpAgent extends McpAgent<Env> {
     });
   }
 
-  private registerAccountTools(
-    db: ReturnType<typeof createD1Client>,
-    broker: ReturnType<typeof createEtoroProviders>
-  ) {
+  private registerAccountTools(db: ReturnType<typeof createD1Client>, broker: ReturnType<typeof createEtoroProviders>) {
     this.server.tool(
       "accounts-get",
       "Get detailed account information including buying power and equity",

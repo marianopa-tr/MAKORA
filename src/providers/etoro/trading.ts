@@ -7,8 +7,8 @@ import type {
   MarketClock,
   MarketDay,
   Order,
-  OrderStatus,
   OrderParams,
+  OrderStatus,
   PortfolioHistory,
   PortfolioHistoryParams,
   Position,
@@ -127,7 +127,10 @@ export class EtoroTradingProvider implements BrokerProvider {
   private portfolioPending: Promise<EtoroPortfolioResponse> | null = null;
   private ratesPending: Promise<Map<number, EtoroRate>> | null = null;
 
-  constructor(private client: EtoroClient, private instruments: EtoroInstrumentCache) {}
+  constructor(
+    private client: EtoroClient,
+    private instruments: EtoroInstrumentCache
+  ) {}
 
   async getAccount(): Promise<Account> {
     const env = this.client.getEnvironment();
@@ -139,11 +142,11 @@ export class EtoroTradingProvider implements BrokerProvider {
       const response = await this.getCachedPortfolio();
       credit = response.clientPortfolio?.credit ?? 0;
       const rawPositions = this.collectPositions(response);
-      const instrumentIds = [...new Set(
-        rawPositions
-          .map((pos) => this.getInstrumentId(pos))
-          .filter((id): id is number => typeof id === "number")
-      )];
+      const instrumentIds = [
+        ...new Set(
+          rawPositions.map((pos) => this.getInstrumentId(pos)).filter((id): id is number => typeof id === "number")
+        ),
+      ];
 
       let meta = new Map<number, { symbol: string; instrumentTypeId?: number; exchangeId?: number }>();
       try {
@@ -169,10 +172,7 @@ export class EtoroTradingProvider implements BrokerProvider {
       longMarketValue = positions.reduce((sum, pos) => sum + (pos.market_value ?? 0), 0);
       equity = credit + longMarketValue;
     } catch {
-      const response = await this.client.tradingRequest<EtoroPortfolioResponse>(
-        "GET",
-        `/trading/info/${env}/pnl`
-      );
+      const response = await this.client.tradingRequest<EtoroPortfolioResponse>("GET", `/trading/info/${env}/pnl`);
       credit = response.clientPortfolio?.credit ?? 0;
       const unrealizedPnL = response.clientPortfolio?.unrealizedPnL ?? 0;
       equity = credit + unrealizedPnL;
@@ -209,11 +209,11 @@ export class EtoroTradingProvider implements BrokerProvider {
   async getPositions(): Promise<Position[]> {
     const response = await this.getCachedPortfolio();
     const rawPositions = this.dedupePositions(response.clientPortfolio?.positions ?? []);
-    const instrumentIds = [...new Set(
-      rawPositions
-        .map((pos) => this.getInstrumentId(pos))
-        .filter((id): id is number => typeof id === "number")
-    )];
+    const instrumentIds = [
+      ...new Set(
+        rawPositions.map((pos) => this.getInstrumentId(pos)).filter((id): id is number => typeof id === "number")
+      ),
+    ];
 
     let meta = new Map<number, { symbol: string; instrumentTypeId?: number; exchangeId?: number }>();
     try {
@@ -387,10 +387,7 @@ export class EtoroTradingProvider implements BrokerProvider {
 
   async listOrders(_params?: ListOrdersParams): Promise<Order[]> {
     const env = this.client.getEnvironment();
-    const response = await this.client.tradingRequest<EtoroPortfolioResponse>(
-      "GET",
-      `/trading/info/${env}/portfolio`
-    );
+    const response = await this.client.tradingRequest<EtoroPortfolioResponse>("GET", `/trading/info/${env}/portfolio`);
     const orders = [
       ...(response.clientPortfolio?.orders ?? []),
       ...(response.clientPortfolio?.ordersForOpen ?? []),
@@ -409,7 +406,7 @@ export class EtoroTradingProvider implements BrokerProvider {
 
     return orders.map((order) => {
       const instrumentId = this.getInstrumentId(order);
-      const symbol = instrumentId ? meta.get(instrumentId)?.symbol ?? String(instrumentId) : "UNKNOWN";
+      const symbol = instrumentId ? (meta.get(instrumentId)?.symbol ?? String(instrumentId)) : "UNKNOWN";
       const orderId = order.orderId ?? order.orderID ?? Date.now();
       return {
         id: String(orderId),
@@ -546,7 +543,7 @@ export class EtoroTradingProvider implements BrokerProvider {
 
     const rateMap = await this.getCachedRates();
     const rate = rateMap.get(instrumentId);
-    const price = params.side === "buy" ? rate?.ask ?? rate?.lastExecution : rate?.bid ?? rate?.lastExecution;
+    const price = params.side === "buy" ? (rate?.ask ?? rate?.lastExecution) : (rate?.bid ?? rate?.lastExecution);
     if (!price || price <= 0) {
       throw createError(ErrorCode.PROVIDER_ERROR, "Unable to compute units for order (missing price)");
     }
@@ -568,7 +565,7 @@ export class EtoroTradingProvider implements BrokerProvider {
     const ratePrice = rateCandidate && rateCandidate > 0 ? rateCandidate : null;
     const currentPrice = position.closeRate ?? ratePrice ?? openRate;
     const marketValue = currentPrice * qty;
-    const costBasis = position.amount ?? (openRate * qty);
+    const costBasis = position.amount ?? openRate * qty;
     const side = position.isBuy === false ? "short" : "long";
     const rawPnL = position.pnL ?? position.pnl ?? position.PnL ?? position.unrealizedPnL ?? null;
     const computedPnL = (currentPrice - openRate) * qty * (side === "short" ? -1 : 1);
@@ -615,12 +612,7 @@ export class EtoroTradingProvider implements BrokerProvider {
   }
 
   private getInstrumentId(record: EtoroPortfolioPosition | EtoroPortfolioOrder): number | null {
-    return (
-      record.instrumentId ??
-      record.instrumentID ??
-      (record as { InstrumentID?: number }).InstrumentID ??
-      null
-    );
+    return record.instrumentId ?? record.instrumentID ?? (record as { InstrumentID?: number }).InstrumentID ?? null;
   }
 
   private getPositionId(position: EtoroPortfolioPosition): number | null {
@@ -707,10 +699,7 @@ export class EtoroTradingProvider implements BrokerProvider {
   private async fetchAllRates(): Promise<Map<number, EtoroRate>> {
     const rateMap = new Map<number, EtoroRate>();
     try {
-      const response = await this.client.marketDataRequest<EtoroRatesResponse>(
-        "GET",
-        "/market-data/instruments/rates"
-      );
+      const response = await this.client.marketDataRequest<EtoroRatesResponse>("GET", "/market-data/instruments/rates");
       for (const rate of response.rates ?? []) {
         const id = rate.instrumentId ?? rate.instrumentID;
         if (typeof id === "number") {
@@ -812,6 +801,9 @@ export class EtoroTradingProvider implements BrokerProvider {
   }
 }
 
-export function createEtoroTradingProvider(client: EtoroClient, instruments: EtoroInstrumentCache): EtoroTradingProvider {
+export function createEtoroTradingProvider(
+  client: EtoroClient,
+  instruments: EtoroInstrumentCache
+): EtoroTradingProvider {
   return new EtoroTradingProvider(client, instruments);
 }
