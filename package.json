@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev src/index.ts",
     "build": "tsc",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy -c wrangler-app.jsonc",
     "deploy:app": "wrangler deploy -c wrangler-app.jsonc",
     "dev:app": "wrangler dev -c wrangler-app.jsonc",
     "deploy:production": "wrangler deploy --env production",
