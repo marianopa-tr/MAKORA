@@ -13,8 +13,8 @@ export interface AlpacaProviders {
 
 export function createAlpacaProviders(env: Env): AlpacaProviders {
   const config: AlpacaClientConfig = {
-    apiKey: env.ALPACA_API_KEY,
-    apiSecret: env.ALPACA_API_SECRET,
+    apiKey: env.ALPACA_API_KEY ?? "",
+    apiSecret: env.ALPACA_API_SECRET ?? "",
     paper: parseBoolean(env.ALPACA_PAPER, true),
   };
 
